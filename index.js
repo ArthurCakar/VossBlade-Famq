@@ -109,6 +109,14 @@ const commands = [
       option.setName('kullanıcı')
         .setDescription('Bilgilerini görmek istediğiniz kullanıcı')
         .setRequired(false)),
+  
+  new SlashCommandBuilder()
+    .setName('say')
+    .setDescription('Bota bir şey söyletir.')
+    .addStringOption(option => 
+      option.setName('mesaj')
+        .setDescription('Botun söyleyeceği mesaj')
+        .setRequired(true)),
 ].map(command => command.toJSON());
 
 const rest = new (require('discord.js').REST)({ version: '10' }).setToken(process.env.TOKEN);
@@ -132,7 +140,7 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'help') {
     const embed = new EmbedBuilder()
       .setTitle("VossBlade Famq Bot Commands")
-      .setDescription("**Moderator**\n- /clear\n- /ban\n\n**General**\n- /music (müzik komutları)\n\n**Bot**\n- /ping")
+      .setDescription("**Moderator**\n- /clear\n- /ban\n\n**General**\n- /music (müzik komutları)\n- /avatar\n- /serverinfo\n- /userinfo\n- /say\n\n**Bot**\n- /ping")
       .setImage("https://media.discordapp.net/attachments/962353412480069652/1428851964149764166/standard.gif?ex=68f40197&is=68f2b017&hm=b7b73097e5dd8c90fa0d8e2713d86b1402dca891fcc1bbe99de673cda456c666&=")
       .setColor(0x00AE86)
       .setTimestamp();
@@ -257,38 +265,66 @@ client.on('interactionCreate', async interaction => {
         { name: 'ID', value: user.id, inline: true },
         { name: 'Hesap Oluşturulma', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
         { name: 'Sunucuya Katılma', value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`, inline: true },
-        { name: 'Roller', value: member.roles.cache.map(role => role.toString()).join(', '), inline: false }
+        { name: 'Roller', value: member.roles.cache.map(role => role.toString()).join(', ').substring(0, 1024) || 'Rol yok', inline: false }
       )
       .setColor(0x00AE86)
       .setTimestamp();
     
     await interaction.reply({ embeds: [embed] });
   }
+
+  if (commandName === 'say') {
+    const message = interaction.options.getString('mesaj');
+    
+    // Yetki kontrolü - Sadece mesaj yönetme yetkisi olanlar kullanabilir
+    if (!interaction.memberPermissions.has(PermissionsBitField.Flags.ManageMessages)) {
+      return interaction.reply({ content: 'Bu komutu kullanmak için "Mesajları Yönet" yetkisine sahip olmalısınız.', ephemeral: true });
+    }
+    
+    await interaction.reply({ content: 'Mesaj gönderildi!', ephemeral: true });
+    await interaction.channel.send(message);
+  }
 });
 
-// Müzik komutları için fonksiyonlar
+// Müzik komutları için geliştirilmiş fonksiyonlar
 async function handlePlayCommand(interaction) {
   const voiceChannel = interaction.member.voice.channel;
   if (!voiceChannel) {
     return interaction.reply({ content: '❌ Müzik çalmak için bir ses kanalında olmalısınız!', ephemeral: true });
   }
 
-  const song = interaction.options.getString('şarkı');
+  const songQuery = interaction.options.getString('şarkı');
   
   try {
+    await interaction.deferReply();
+    
+    // YouTube'dan şarkı arama
+    let songInfo;
+    try {
+      const searchResults = await play.search(songQuery, { limit: 1 });
+      if (searchResults.length === 0) {
+        return interaction.editReply({ content: '❌ Şarkı bulunamadı! Lütfen farklı bir isim veya link deneyin.' });
+      }
+      songInfo = searchResults[0];
+    } catch (error) {
+      console.error('Şarkı arama hatası:', error);
+      return interaction.editReply({ content: '❌ Şarkı aranırken bir hata oluştu!' });
+    }
+
     // Kuyruk yapısını al veya oluştur
     const serverQueue = queue.get(interaction.guildId);
+    
     if (!serverQueue) {
       const queueConstruct = {
         textChannel: interaction.channel,
         voiceChannel: voiceChannel,
         connection: null,
         songs: [],
-        player: null,
-        playing: false,
+        player: createAudioPlayer(),
+        playing: true,
       };
       queue.set(interaction.guildId, queueConstruct);
-      queueConstruct.songs.push(song);
+      queueConstruct.songs.push({ ...songInfo, requestedBy: interaction.user.tag });
 
       try {
         const connection = joinVoiceChannel({
@@ -296,94 +332,122 @@ async function handlePlayCommand(interaction) {
           guildId: interaction.guildId,
           adapterCreator: interaction.guild.voiceAdapterCreator,
         });
+        
         queueConstruct.connection = connection;
-        playSong(interaction.guildId, queueConstruct.songs[0], interaction);
-        await interaction.reply(`🎵 Şarkı sıraya eklendi: **${song}**`);
+        queueConstruct.connection.subscribe(queueConstruct.player);
+        
+        await playSong(interaction.guildId, queueConstruct.songs[0]);
+        
+        const embed = new EmbedBuilder()
+          .setTitle('🎵 Şimdi Oynatılıyor')
+          .setDescription(`[${songInfo.title}](${songInfo.url})`)
+          .setThumbnail(songInfo.thumbnail)
+          .addFields(
+            { name: 'Süre', value: songInfo.durationRaw, inline: true },
+            { name: 'İsteyen', value: interaction.user.tag, inline: true }
+          )
+          .setColor(0x00FF00);
+        
+        await interaction.editReply({ embeds: [embed] });
       } catch (error) {
-        console.error(error);
+        console.error('Ses kanalına katılma hatası:', error);
         queue.delete(interaction.guildId);
-        return interaction.reply({ content: '❌ Ses kanalına katılırken bir hata oluştu!', ephemeral: true });
+        return interaction.editReply({ content: '❌ Ses kanalına katılırken bir hata oluştu!' });
       }
     } else {
-      serverQueue.songs.push(song);
-      await interaction.reply(`🎵 Şarkı sıraya eklendi: **${song}**`);
+      serverQueue.songs.push({ ...songInfo, requestedBy: interaction.user.tag });
+      await interaction.editReply(`🎵 **${songInfo.title}** sıraya eklendi!`);
     }
   } catch (error) {
-    console.error(error);
-    await interaction.reply({ content: '❌ Şarkı çalınırken bir hata oluştu!', ephemeral: true });
+    console.error('Play komutu hatası:', error);
+    await interaction.editReply({ content: '❌ Şarkı çalınırken bir hata oluştu!' });
   }
 }
 
-async function playSong(guildId, song, interaction) {
+async function playSong(guildId, song) {
   const serverQueue = queue.get(guildId);
   if (!song) {
-    serverQueue.connection.destroy();
+    if (serverQueue.connection) {
+      serverQueue.connection.destroy();
+    }
     queue.delete(guildId);
     return;
   }
 
   try {
-    const stream = await play.stream(song);
-    const resource = createAudioResource(stream.stream, { inputType: stream.type });
+    const stream = await play.stream(song.url);
+    const resource = createAudioResource(stream.stream, {
+      inputType: stream.type,
+      inlineVolume: true
+    });
     
-    if (!serverQueue.player) {
-      serverQueue.player = createAudioPlayer();
-      serverQueue.connection.subscribe(serverQueue.player);
-    }
+    resource.volume.setVolume(0.5);
     
     serverQueue.player.play(resource);
     serverQueue.playing = true;
 
     serverQueue.player.on(AudioPlayerStatus.Idle, () => {
       serverQueue.songs.shift();
-      playSong(guildId, serverQueue.songs[0], interaction);
+      playSong(guildId, serverQueue.songs[0]);
+    });
+
+    serverQueue.player.on('error', error => {
+      console.error('Oynatıcı hatası:', error);
+      serverQueue.textChannel.send('❌ Şarkı çalınırken bir hata oluştu!');
+      serverQueue.songs.shift();
+      playSong(guildId, serverQueue.songs[0]);
     });
 
   } catch (error) {
-    console.error(error);
+    console.error('Şarkı çalma hatası:', error);
     serverQueue.textChannel.send('❌ Şarkı çalınırken bir hata oluştu!');
     serverQueue.songs.shift();
-    playSong(guildId, serverQueue.songs[0], interaction);
+    playSong(guildId, serverQueue.songs[0]);
   }
 }
 
 async function handlePauseCommand(interaction) {
   const voiceChannel = interaction.member.voice.channel;
+  const serverQueue = queue.get(interaction.guildId);
+  
   if (!voiceChannel) {
     return interaction.reply({ content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', ephemeral: true });
   }
 
-  const serverQueue = queue.get(interaction.guildId);
   if (!serverQueue || !serverQueue.playing) {
     return interaction.reply({ content: '❌ Şu anda çalan bir şarkı yok!', ephemeral: true });
   }
 
   serverQueue.player.pause();
+  serverQueue.playing = false;
   await interaction.reply('⏸️ Şarkı duraklatıldı.');
 }
 
 async function handleResumeCommand(interaction) {
   const voiceChannel = interaction.member.voice.channel;
+  const serverQueue = queue.get(interaction.guildId);
+  
   if (!voiceChannel) {
     return interaction.reply({ content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', ephemeral: true });
   }
 
-  const serverQueue = queue.get(interaction.guildId);
-  if (!serverQueue || !serverQueue.player) {
+  if (!serverQueue || serverQueue.playing) {
     return interaction.reply({ content: '❌ Şu anda duraklatılmış bir şarkı yok!', ephemeral: true });
   }
 
   serverQueue.player.unpause();
+  serverQueue.playing = true;
   await interaction.reply('▶️ Şarkı devam ettiriliyor.');
 }
 
 async function handleNextCommand(interaction) {
   const voiceChannel = interaction.member.voice.channel;
+  const serverQueue = queue.get(interaction.guildId);
+  
   if (!voiceChannel) {
     return interaction.reply({ content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', ephemeral: true });
   }
 
-  const serverQueue = queue.get(interaction.guildId);
   if (!serverQueue || serverQueue.songs.length < 2) {
     return interaction.reply({ content: '❌ Sırada başka şarkı yok!', ephemeral: true });
   }
@@ -394,17 +458,19 @@ async function handleNextCommand(interaction) {
 
 async function handleReplayCommand(interaction) {
   const voiceChannel = interaction.member.voice.channel;
+  const serverQueue = queue.get(interaction.guildId);
+  
   if (!voiceChannel) {
     return interaction.reply({ content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', ephemeral: true });
   }
 
-  const serverQueue = queue.get(interaction.guildId);
   if (!serverQueue || !serverQueue.songs.length) {
     return interaction.reply({ content: '❌ Şu anda çalan bir şarkı yok!', ephemeral: true });
   }
 
-  // Mevcut şarkıyı baştan çalmak için, player'ı durdurup aynı şarkıyı tekrar oynatıyoruz
-  serverQueue.songs.unshift(serverQueue.songs[0]);
+  // Mevcut şarkıyı baştan çalmak için kuyruğun başına ekliyoruz
+  const currentSong = serverQueue.songs[0];
+  serverQueue.songs.unshift(currentSong);
   serverQueue.player.stop();
   await interaction.reply('🔂 Şarkı baştan çalınıyor.');
 }
