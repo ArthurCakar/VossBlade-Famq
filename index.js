@@ -1,4 +1,6 @@
 const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, SlashCommandBuilder, Routes, ActivityType } = require('discord.js');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, getVoiceConnection } = require('@discordjs/voice');
+const play = require('play-dl');
 const express = require('express');
 
 // Express app for health check
@@ -32,8 +34,12 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates,
   ]
 });
+
+// Müzik kuyruğu
+const queues = new Map();
 
 // Bot ready event
 client.once('ready', () => {
@@ -41,12 +47,12 @@ client.once('ready', () => {
   console.log(`📊 Serving ${client.guilds.cache.size} servers`);
   
   client.user.setPresence({
-    activities: [{ name: 'VossBlade Famq | /help', type: ActivityType.Watching }],
+    activities: [{ name: 'VossBlade Famq | /help', type: ActivityType.Listening }],
     status: 'online'
   });
 });
 
-// Slash Commands (Sadece temel komutlar)
+// Slash Commands (Müzik komutları eklendi)
 const commands = [
   new SlashCommandBuilder()
     .setName('help')
@@ -78,6 +84,48 @@ const commands = [
     .setName('ping')
     .setDescription('Botun ping değerini gösterir.'),
 
+  // Müzik Komutları
+  new SlashCommandBuilder()
+    .setName('play')
+    .setDescription('Şarkı çalar.')
+    .addStringOption(option =>
+      option.setName('şarkı')
+        .setDescription('Şarkı ismi veya YouTube linki')
+        .setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('stop')
+    .setDescription('Müziği durdurur ve kanaldan ayrılır.'),
+
+  new SlashCommandBuilder()
+    .setName('pause')
+    .setDescription('Şarkıyı duraklatır.'),
+
+  new SlashCommandBuilder()
+    .setName('resume')
+    .setDescription('Duraklatılan şarkıyı devam ettirir.'),
+
+  new SlashCommandBuilder()
+    .setName('next')
+    .setDescription('Sıradaki şarkıya geçer.'),
+
+  new SlashCommandBuilder()
+    .setName('replay')
+    .setDescription('Şarkıyı baştan çalar.'),
+
+  new SlashCommandBuilder()
+    .setName('queue')
+    .setDescription('Şarkı kuyruğunu gösterir.'),
+
+  // Eğlence Komutları
+  new SlashCommandBuilder()
+    .setName('kaccm')
+    .setDescription('Kullanıcının kaç cm olduğunu söyler.')
+    .addUserOption(option =>
+      option.setName('kullanıcı')
+        .setDescription('Kaç cm olduğunu öğrenmek istediğiniz kullanıcı')
+        .setRequired(false)),
+
   new SlashCommandBuilder()
     .setName('avatar')
     .setDescription('Kullanıcının avatarını gösterir.')
@@ -96,14 +144,6 @@ const commands = [
     .addUserOption(option =>
       option.setName('kullanıcı')
         .setDescription('Bilgilerini görmek istediğiniz kullanıcı')
-        .setRequired(false)),
-
-    new SlashCommandBuilder()
-    .setName('kaccm')
-    .setDescription('Kullanıcının kaç cm olduğunu söyler.')
-    .addUserOption(option =>
-      option.setName('kullanıcı')
-        .setDescription('Kaç cm olduğunu öğrenmek istediğiniz kullanıcı')
         .setRequired(false)),
 
 ].map(command => command.toJSON());
@@ -146,7 +186,7 @@ client.on('interactionCreate', async (interaction) => {
           },
           {
             name: '🎵 **Müzik**',
-            value: '• *Yakında eklenecek!* 🔧',
+            value: '• `/play` - Şarkı çalar\n• `/stop` - Müziği durdurur\n• `/pause` - Duraklatır\n• `/resume` - Devam ettirir\n• `/next` - Sonrakine geçer\n• `/replay` - Baştan çalar\n• `/queue` - Kuyruğu gösterir',
             inline: false
           },
           {
@@ -238,6 +278,64 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.editReply({ content: '', embeds: [pingEmbed] });
     }
 
+    // MÜZİK KOMUTLARI
+    else if (commandName === 'play') {
+      await handlePlayCommand(interaction);
+    }
+
+    else if (commandName === 'stop') {
+      await handleStopCommand(interaction);
+    }
+
+    else if (commandName === 'pause') {
+      await handlePauseCommand(interaction);
+    }
+
+    else if (commandName === 'resume') {
+      await handleResumeCommand(interaction);
+    }
+
+    else if (commandName === 'next') {
+      await handleNextCommand(interaction);
+    }
+
+    else if (commandName === 'replay') {
+      await handleReplayCommand(interaction);
+    }
+
+    else if (commandName === 'queue') {
+      await handleQueueCommand(interaction);
+    }
+
+    // EĞLENCE KOMUTLARI
+    else if (commandName === 'kaccm') {
+      const targetUser = options.getUser('kullanıcı') || user;
+      const randomCm = Math.floor(Math.random() * 50) + 1;
+
+      const messages = [
+        "Vay canına! 😲",
+        "İnanılmaz! 🎯",
+        "Bu çok iyi! 🔥",
+        "Wow! 🌟",
+        "Harika! 💪"
+      ];
+      const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+
+      const cmEmbed = new EmbedBuilder()
+        .setTitle(`🧐 ${targetUser.username} Kaç CM?`)
+        .setDescription(`**${randomCm} CM**\n\n${randomMessage}`)
+        .setColor(0xFF69B4)
+        .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+        .addFields(
+          { name: 'Ölçen', value: user.tag, inline: true },
+          { name: 'Ölçülen', value: targetUser.tag, inline: true }
+        )
+        .setFooter({ text: 'VossBlade Famq Eğlence', iconURL: client.user.displayAvatarURL() })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [cmEmbed] });
+    }
+
     else if (commandName === 'avatar') {
       const targetUser = options.getUser('kullanıcı') || user;
       
@@ -284,38 +382,6 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.reply({ embeds: [userEmbed] });
     }
 
-        else if (commandName === 'kaccm') {
-      // Eğer kullanıcı seçilmezse, komutu kullanan kişiyi al
-      const targetUser = options.getUser('kullanıcı') || user;
-      // 1 ile 50 arasında rastgele bir sayı üret
-      const randomCm = Math.floor(Math.random() * 50) + 1;
-
-      // Eğlenceli mesajlar
-      const messages = [
-        "Vay canına! 😲",
-        "İnanılmaz! 🎯",
-        "Bu çok iyi! 🔥",
-        "Wow! 🌟",
-        "Harika! 💪"
-      ];
-      const randomMessage = messages[Math.floor(Math.random() * messages.length)];
-
-      // Embed oluştur
-      const cmEmbed = new EmbedBuilder()
-        .setTitle(`🧐 ${targetUser.username} Kaç CM?`)
-        .setDescription(`**${randomCm} CM**\n\n${randomMessage}`)
-        .setColor(0xFF69B4) // Pembe renk
-        .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-        .addFields(
-          { name: 'Ölçen', value: user.tag, inline: true },
-          { name: 'Ölçülen', value: targetUser.tag, inline: true }
-        )
-        .setFooter({ text: 'VossBlade Famq Eğlence', iconURL: client.user.displayAvatarURL() })
-        .setTimestamp();
-
-      await interaction.reply({ embeds: [cmEmbed] });
-    }
-
   } catch (error) {
     console.error(`Command error (${commandName}):`, error);
     
@@ -327,6 +393,299 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 });
+
+// MÜZİK FONKSİYONLARI
+
+async function handlePlayCommand(interaction) {
+  const voiceChannel = interaction.member.voice.channel;
+  if (!voiceChannel) {
+    return interaction.reply({ 
+      content: '❌ Müzik çalmak için önce bir ses kanalına katılın!', 
+      ephemeral: true 
+    });
+  }
+
+  const query = interaction.options.getString('şarkı');
+  
+  try {
+    await interaction.deferReply();
+
+    // YouTube'dan şarkı ara
+    let videoInfo;
+    if (play.yt_validate(query) === 'video') {
+      // Doğrudan link
+      videoInfo = await play.video_info(query);
+    } else {
+      // Arama yap
+      const search = await play.search(query, { limit: 1 });
+      if (!search || search.length === 0) {
+        return await interaction.editReply({ content: '❌ Şarkı bulunamadı! Lütfen farklı bir isim deneyin.' });
+      }
+      videoInfo = await play.video_info(search[0].url);
+    }
+
+    const song = {
+      title: videoInfo.video_details.title,
+      url: videoInfo.video_details.url,
+      duration: videoInfo.video_details.durationRaw,
+      thumbnail: videoInfo.video_details.thumbnails[0].url,
+      requestedBy: interaction.user.tag
+    };
+
+    // Kuyruk yapısını al veya oluştur
+    let queue = queues.get(interaction.guild.id);
+    
+    if (!queue) {
+      queue = {
+        voiceChannel: voiceChannel,
+        textChannel: interaction.channel,
+        connection: null,
+        songs: [],
+        player: createAudioPlayer(),
+        playing: true
+      };
+      queues.set(interaction.guild.id, queue);
+    }
+
+    // Şarkıyı kuyruğa ekle
+    queue.songs.push(song);
+
+    // Bot ses kanalında değilse bağlan
+    if (!queue.connection) {
+      try {
+        const connection = joinVoiceChannel({
+          channelId: voiceChannel.id,
+          guildId: interaction.guild.id,
+          adapterCreator: interaction.guild.voiceAdapterCreator,
+        });
+        
+        queue.connection = connection;
+        queue.connection.subscribe(queue.player);
+        
+        // İlk şarkıyı çal
+        playSong(interaction.guild.id, queue.songs[0]);
+        
+        const embed = new EmbedBuilder()
+          .setTitle('🎵 Şimdi Oynatılıyor')
+          .setDescription(`[${song.title}](${song.url})`)
+          .setThumbnail(song.thumbnail)
+          .addFields(
+            { name: '⏱️ Süre', value: song.duration, inline: true },
+            { name: '👤 İsteyen', value: song.requestedBy, inline: true }
+          )
+          .setColor(0x00FF00)
+          .setFooter({ text: 'VossBlade Famq Music' })
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+      } catch (error) {
+        console.error('Ses kanalına bağlanma hatası:', error);
+        queues.delete(interaction.guild.id);
+        return await interaction.editReply({ content: '❌ Ses kanalına bağlanırken bir hata oluştu!' });
+      }
+    } else {
+      await interaction.editReply(`🎵 **${song.title}** sıraya eklendi! 📝 (Sıra: ${queue.songs.length})`);
+    }
+
+  } catch (error) {
+    console.error('Play komutu hatası:', error);
+    await interaction.editReply({ content: '❌ Şarkı çalınırken beklenmeyen bir hata oluştu!' });
+  }
+}
+
+function playSong(guildId, song) {
+  const queue = queues.get(guildId);
+  if (!song) {
+    // Kuyruk boşsa bağlantıyı temizle
+    if (queue.connection) {
+      queue.connection.destroy();
+    }
+    queues.delete(guildId);
+    return;
+  }
+
+  try {
+    const stream = play.stream(song.url, {
+      quality: 0,
+      discordPlayerCompatibility: true
+    }).then(stream => {
+      const resource = createAudioResource(stream.stream, {
+        inputType: stream.type,
+        inlineVolume: true
+      });
+      
+      resource.volume.setVolume(0.5);
+      queue.player.play(resource);
+
+      queue.player.on(AudioPlayerStatus.Idle, () => {
+        queue.songs.shift();
+        playSong(guildId, queue.songs[0]);
+      });
+
+      queue.player.on('error', error => {
+        console.error('Oynatıcı hatası:', error);
+        queue.textChannel.send('❌ Şarkı çalınırken bir hata oluştu!');
+        queue.songs.shift();
+        playSong(guildId, queue.songs[0]);
+      });
+    });
+
+  } catch (error) {
+    console.error('Şarkı çalma hatası:', error);
+    queue.textChannel.send('❌ Şarkı çalınırken bir hata oluştu!');
+    queue.songs.shift();
+    playSong(guildId, queue.songs[0]);
+  }
+}
+
+async function handleStopCommand(interaction) {
+  const voiceChannel = interaction.member.voice.channel;
+  const queue = queues.get(interaction.guild.id);
+  
+  if (!voiceChannel) {
+    return interaction.reply({ 
+      content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', 
+      ephemeral: true 
+    });
+  }
+
+  if (!queue) {
+    return interaction.reply({ 
+      content: '❌ Zaten müzik çalmıyor!', 
+      ephemeral: true 
+    });
+  }
+
+  queue.songs = [];
+  queue.player.stop();
+  
+  if (queue.connection) {
+    queue.connection.destroy();
+  }
+  
+  queues.delete(interaction.guild.id);
+  await interaction.reply('⏹️ Müzik durduruldu ve kanaldan ayrıldı.');
+}
+
+async function handlePauseCommand(interaction) {
+  const voiceChannel = interaction.member.voice.channel;
+  const queue = queues.get(interaction.guild.id);
+  
+  if (!voiceChannel) {
+    return interaction.reply({ 
+      content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', 
+      ephemeral: true 
+    });
+  }
+
+  if (!queue || !queue.playing) {
+    return interaction.reply({ 
+      content: '❌ Şu anda çalan bir şarkı yok!', 
+      ephemeral: true 
+    });
+  }
+
+  queue.player.pause();
+  queue.playing = false;
+  await interaction.reply('⏸️ Şarkı duraklatıldı.');
+}
+
+async function handleResumeCommand(interaction) {
+  const voiceChannel = interaction.member.voice.channel;
+  const queue = queues.get(interaction.guild.id);
+  
+  if (!voiceChannel) {
+    return interaction.reply({ 
+      content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', 
+      ephemeral: true 
+    });
+  }
+
+  if (!queue || queue.playing) {
+    return interaction.reply({ 
+      content: '❌ Şu anda duraklatılmış bir şarkı yok!', 
+      ephemeral: true 
+    });
+  }
+
+  queue.player.unpause();
+  queue.playing = true;
+  await interaction.reply('▶️ Şarkı devam ettiriliyor.');
+}
+
+async function handleNextCommand(interaction) {
+  const voiceChannel = interaction.member.voice.channel;
+  const queue = queues.get(interaction.guild.id);
+  
+  if (!voiceChannel) {
+    return interaction.reply({ 
+      content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', 
+      ephemeral: true 
+    });
+  }
+
+  if (!queue || queue.songs.length < 2) {
+    return interaction.reply({ 
+      content: '❌ Sırada başka şarkı yok!', 
+      ephemeral: true 
+    });
+  }
+
+  queue.player.stop();
+  await interaction.reply('⏭️ Sıradaki şarkıya geçiliyor.');
+}
+
+async function handleReplayCommand(interaction) {
+  const voiceChannel = interaction.member.voice.channel;
+  const queue = queues.get(interaction.guild.id);
+  
+  if (!voiceChannel) {
+    return interaction.reply({ 
+      content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', 
+      ephemeral: true 
+    });
+  }
+
+  if (!queue || !queue.songs.length) {
+    return interaction.reply({ 
+      content: '❌ Şu anda çalan bir şarkı yok!', 
+      ephemeral: true 
+    });
+  }
+
+  const currentSong = queue.songs[0];
+  queue.player.stop();
+  // Kısa bir gecikme ekleyerek çakışmayı önle
+  setTimeout(() => {
+    queue.songs.unshift(currentSong);
+  }, 100);
+  
+  await interaction.reply('🔂 Şarkı baştan çalınıyor.');
+}
+
+async function handleQueueCommand(interaction) {
+  const queue = queues.get(interaction.guild.id);
+  
+  if (!queue || !queue.songs.length) {
+    return interaction.reply({ 
+      content: '❌ Kuyrukta şarkı yok!', 
+      ephemeral: true 
+    });
+  }
+
+  const queueList = queue.songs.slice(0, 10).map((song, index) => 
+    `**${index + 1}.** [${song.title}](${song.url}) - ${song.requestedBy}`
+  ).join('\n');
+
+  const embed = new EmbedBuilder()
+    .setTitle('📋 Şarkı Kuyruğu')
+    .setDescription(queueList)
+    .setColor(0x0099FF)
+    .setFooter({ text: `Toplam ${queue.songs.length} şarkı` })
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [embed] });
+}
 
 // Error handling
 process.on('unhandledRejection', (error) => {
