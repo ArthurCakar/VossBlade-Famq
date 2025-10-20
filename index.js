@@ -152,7 +152,7 @@ client.on('interactionCreate', async (interaction) => {
             inline: false
           }
         )
-        .setImage('https://media.discordapp.net/attachments/962353412480069652/1428851964149764166/standard.gif?ex=68f40197&is=68f2b017&hm=b7b73097e5dd8c90fa0d8e2713d86b1402dca891fcc1bbe99de673cda456c666&=')
+        .setImage('https://media.discordapp.net/attachments/962353412480069652/1429871003936493579/standard_4.gif?ex=68f7b6a5&is=68f66525&hm=f1bdd34f0f60a3637928f51390113da39e539745ea2bc315a563b3398091bea2&=')
         .setFooter({ text: `VossBlade Famq Bot | Toplam ${client.guilds.cache.size} sunucu`, iconURL: client.user.displayAvatarURL() })
         .setTimestamp();
 
