@@ -46,7 +46,7 @@ client.once('ready', () => {
   });
 });
 
-// Slash Commands
+// Slash Commands (/say komutu eklendi)
 const commands = [
   new SlashCommandBuilder()
     .setName('help')
@@ -106,6 +106,15 @@ const commands = [
         .setDescription('Bilgilerini görmek istediğiniz kullanıcı')
         .setRequired(false)),
 
+  // YENİ SAY KOMUTU
+  new SlashCommandBuilder()
+    .setName('say')
+    .setDescription('Bota bir şey söyletir.')
+    .addStringOption(option =>
+      option.setName('mesaj')
+        .setDescription('Botun söyleyeceği mesaj')
+        .setRequired(true)),
+
 ].map(command => command.toJSON());
 
 // Register slash commands
@@ -125,7 +134,7 @@ client.once('ready', async () => {
   }
 });
 
-// Command handler
+// Command handler (/say komut işleyici eklendi)
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isCommand()) return;
 
@@ -151,7 +160,7 @@ client.on('interactionCreate', async (interaction) => {
           },
           {
             name: '😄 **Eğlence**',
-            value: '• `/avatar` - Avatar gösterir\n• `/serverinfo` - Sunucu bilgisi\n• `/userinfo` - Kullanıcı bilgisi\n• `/kaccm` - Kaç cm olduğunu söyler',
+            value: '• `/avatar` - Avatar gösterir\n• `/serverinfo` - Sunucu bilgisi\n• `/userinfo` - Kullanıcı bilgisi\n• `/kaccm` - Kaç cm olduğunu söyler\n• `/say` - Bota mesaj söyletir',
             inline: false
           },
           {
@@ -310,6 +319,21 @@ client.on('interactionCreate', async (interaction) => {
         );
 
       await interaction.reply({ embeds: [userEmbed] });
+    }
+
+    // YENİ SAY KOMUTU
+    else if (commandName === 'say') {
+      if (!interaction.memberPermissions.has(PermissionsBitField.Flags.ManageMessages)) {
+        return await interaction.reply({
+          content: '❌ Bu komutu kullanmak için **Mesajları Yönet** yetkisine sahip olmalısınız!',
+          ephemeral: true
+        });
+      }
+
+      const message = options.getString('mesaj');
+      
+      await interaction.reply({ content: '✅ Mesaj gönderildi!', ephemeral: true });
+      await interaction.channel.send(message);
     }
 
   } catch (error) {
