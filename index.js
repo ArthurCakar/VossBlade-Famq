@@ -1,6 +1,7 @@
 const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, SlashCommandBuilder, Routes, ActivityType } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, getVoiceConnection } = require('@discordjs/voice');
-const play = require('play-dl');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
+const ytdl = require('ytdl-core');
+const yts = require('yt-search');
 const express = require('express');
 
 // Express app for health check
@@ -52,7 +53,7 @@ client.once('ready', () => {
   });
 });
 
-// Slash Commands (Müzik komutları eklendi)
+// Slash Commands
 const commands = [
   new SlashCommandBuilder()
     .setName('help')
@@ -200,7 +201,7 @@ client.on('interactionCreate', async (interaction) => {
             inline: false
           }
         )
-        .setImage('https://media.discordapp.net/attachments/962353412480069652/1429871003936493579/standard_4.gif?ex=68f7b6a5&is=68f66525&hm=f1bdd34f0f60a3637928f51390113da39e539745ea2bc315a563b3398091bea2&=')
+        .setImage('https://media.discordapp.net/attachments/962353412480069652/1428851964149764166/standard.gif?ex=68f40197&is=68f2b017&hm=b7b73097e5dd8c90fa0d8e2713d86b1402dca891fcc1bbe99de673cda456c666&=')
         .setFooter({ text: `VossBlade Famq Bot | Toplam ${client.guilds.cache.size} sunucu`, iconURL: client.user.displayAvatarURL() })
         .setTimestamp();
 
@@ -410,25 +411,36 @@ async function handlePlayCommand(interaction) {
   try {
     await interaction.deferReply();
 
-    // YouTube'dan şarkı ara
-    let videoInfo;
-    if (play.yt_validate(query) === 'video') {
-      // Doğrudan link
-      videoInfo = await play.video_info(query);
-    } else {
-      // Arama yap
-      const search = await play.search(query, { limit: 1 });
-      if (!search || search.length === 0) {
-        return await interaction.editReply({ content: '❌ Şarkı bulunamadı! Lütfen farklı bir isim deneyin.' });
+    let songInfo;
+    
+    // YouTube URL kontrolü
+    if (ytdl.validateURL(query)) {
+      try {
+        songInfo = await ytdl.getInfo(query);
+      } catch (error) {
+        console.error('URL bilgi alma hatası:', error);
+        return await interaction.editReply({ content: '❌ Geçersiz YouTube linki!' });
       }
-      videoInfo = await play.video_info(search[0].url);
+    } else {
+      // Şarkı ismiyle arama
+      try {
+        const searchResults = await yts(query);
+        if (!searchResults.videos.length) {
+          return await interaction.editReply({ content: '❌ Şarkı bulunamadı! Lütfen farklı bir isim deneyin.' });
+        }
+        const video = searchResults.videos[0];
+        songInfo = await ytdl.getInfo(video.url);
+      } catch (error) {
+        console.error('Arama hatası:', error);
+        return await interaction.editReply({ content: '❌ Şarkı aranırken bir hata oluştu!' });
+      }
     }
 
     const song = {
-      title: videoInfo.video_details.title,
-      url: videoInfo.video_details.url,
-      duration: videoInfo.video_details.durationRaw,
-      thumbnail: videoInfo.video_details.thumbnails[0].url,
+      title: songInfo.videoDetails.title,
+      url: songInfo.videoDetails.video_url,
+      duration: songInfo.videoDetails.lengthSeconds,
+      thumbnail: songInfo.videoDetails.thumbnails[0].url,
       requestedBy: interaction.user.tag
     };
 
@@ -470,7 +482,7 @@ async function handlePlayCommand(interaction) {
           .setDescription(`[${song.title}](${song.url})`)
           .setThumbnail(song.thumbnail)
           .addFields(
-            { name: '⏱️ Süre', value: song.duration, inline: true },
+            { name: '⏱️ Süre', value: formatDuration(song.duration), inline: true },
             { name: '👤 İsteyen', value: song.requestedBy, inline: true }
           )
           .setColor(0x00FF00)
@@ -505,29 +517,25 @@ function playSong(guildId, song) {
   }
 
   try {
-    const stream = play.stream(song.url, {
-      quality: 0,
-      discordPlayerCompatibility: true
-    }).then(stream => {
-      const resource = createAudioResource(stream.stream, {
-        inputType: stream.type,
-        inlineVolume: true
-      });
-      
-      resource.volume.setVolume(0.5);
-      queue.player.play(resource);
+    const stream = ytdl(song.url, { 
+      filter: 'audioonly',
+      quality: 'highestaudio',
+      highWaterMark: 1 << 25
+    });
 
-      queue.player.on(AudioPlayerStatus.Idle, () => {
-        queue.songs.shift();
-        playSong(guildId, queue.songs[0]);
-      });
+    const resource = createAudioResource(stream);
+    queue.player.play(resource);
 
-      queue.player.on('error', error => {
-        console.error('Oynatıcı hatası:', error);
-        queue.textChannel.send('❌ Şarkı çalınırken bir hata oluştu!');
-        queue.songs.shift();
-        playSong(guildId, queue.songs[0]);
-      });
+    queue.player.on(AudioPlayerStatus.Idle, () => {
+      queue.songs.shift();
+      playSong(guildId, queue.songs[0]);
+    });
+
+    queue.player.on('error', error => {
+      console.error('Oynatıcı hatası:', error);
+      queue.textChannel.send('❌ Şarkı çalınırken bir hata oluştu!');
+      queue.songs.shift();
+      playSong(guildId, queue.songs[0]);
     });
 
   } catch (error) {
@@ -685,6 +693,21 @@ async function handleQueueCommand(interaction) {
     .setTimestamp();
 
   await interaction.reply({ embeds: [embed] });
+}
+
+// YARDIMCI FONKSİYONLAR
+function formatDuration(seconds) {
+  if (!seconds) return 'Bilinmiyor';
+  
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  } else {
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  }
 }
 
 // Error handling
