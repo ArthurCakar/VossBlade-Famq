@@ -1,14 +1,17 @@
 {
   "name": "vossblade-bot",
-  "version": "1.0.0",
-  "description": "VossBlade Famq Discord Bot",
+  "version": "2.0.0",
+  "description": "VossBlade Famq Discord Bot with Music",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
-    "express": "^4.18.2"
+    "@discordjs/voice": "^0.16.0",
+    "play-dl": "^1.9.8",
+    "express": "^4.18.2",
+    "libsodium-wrappers": "^0.7.10"
   },
   "engines": {
     "node": "18.x"
