@@ -98,6 +98,14 @@ const commands = [
         .setDescription('Bilgilerini görmek istediğiniz kullanıcı')
         .setRequired(false)),
 
+    new SlashCommandBuilder()
+    .setName('kaccm')
+    .setDescription('Kullanıcının kaç cm olduğunu söyler.')
+    .addUserOption(option =>
+      option.setName('kullanıcı')
+        .setDescription('Kaç cm olduğunu öğrenmek istediğiniz kullanıcı')
+        .setRequired(false)),
+
 ].map(command => command.toJSON());
 
 // Register slash commands
@@ -274,6 +282,38 @@ client.on('interactionCreate', async (interaction) => {
         );
 
       await interaction.reply({ embeds: [userEmbed] });
+    }
+
+        else if (commandName === 'kaccm') {
+      // Eğer kullanıcı seçilmezse, komutu kullanan kişiyi al
+      const targetUser = options.getUser('kullanıcı') || user;
+      // 1 ile 50 arasında rastgele bir sayı üret
+      const randomCm = Math.floor(Math.random() * 50) + 1;
+
+      // Eğlenceli mesajlar
+      const messages = [
+        "Vay canına! 😲",
+        "İnanılmaz! 🎯",
+        "Bu çok iyi! 🔥",
+        "Wow! 🌟",
+        "Harika! 💪"
+      ];
+      const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+
+      // Embed oluştur
+      const cmEmbed = new EmbedBuilder()
+        .setTitle(`🧐 ${targetUser.username} Kaç CM?`)
+        .setDescription(`**${randomCm} CM**\n\n${randomMessage}`)
+        .setColor(0xFF69B4) // Pembe renk
+        .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+        .addFields(
+          { name: 'Ölçen', value: user.tag, inline: true },
+          { name: 'Ölçülen', value: targetUser.tag, inline: true }
+        )
+        .setFooter({ text: 'VossBlade Famq Eğlence', iconURL: client.user.displayAvatarURL() })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [cmEmbed] });
     }
 
   } catch (error) {
