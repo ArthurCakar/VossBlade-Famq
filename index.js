@@ -151,7 +151,7 @@ client.on('interactionCreate', async (interaction) => {
           },
           {
             name: '😄 **Eğlence**',
-            value: '• `/avatar` - Avatar gösterir\n• `/serverinfo` - Sunucu bilgisi\n• `/userinfo` - Kullanıcı bilgisi',
+            value: '• `/avatar` - Avatar gösterir\n• `/serverinfo` - Sunucu bilgisi\n• `/userinfo` - Kullanıcı bilgisi\n• `/kaccm` - Kaç cm olduğunu söyler',
             inline: false
           },
           {
