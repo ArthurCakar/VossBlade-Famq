@@ -249,14 +249,17 @@ client.on('interactionCreate', async (interaction) => {
 
     else if (commandName === 'kaccm') {
       const targetUser = options.getUser('kullanıcı') || user;
-      const randomCm = Math.floor(Math.random() * 50) + 1;
+      const randomCm = Math.floor(Math.random() * 100) + 1;
 
       const messages = [
         "Vay canına! 😲",
         "İnanılmaz! 🎯",
         "Bu çok iyi! 🔥",
         "Wow! 🌟",
-        "Harika! 💪"
+        "Harika! 💪",
+        "Ne büyük ama!",
+        "Oha! 😮",
+        "Çıkma Dışarı! 👿"
       ];
       const randomMessage = messages[Math.floor(Math.random() * messages.length)];
 
