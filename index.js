@@ -1,594 +1,471 @@
-const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, SlashCommandBuilder, Routes } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
-const ytdl = require('ytdl-core');
-const yts = require('yt-search');
+const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, SlashCommandBuilder, Routes, ActivityType } = require('discord.js');
 const express = require('express');
+
+// Express app for health check
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
-// Healthcheck endpoint
+app.use(express.json());
 app.get('/', (req, res) => {
-  res.send('Bot is running!');
+  res.status(200).json({ 
+    status: 'OK', 
+    message: 'VossBlade Bot is running!',
+    timestamp: new Date().toISOString()
+  });
 });
 
-app.listen(port, () => {
-  console.log(`Express app listening on port ${port}`);
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'healthy',
+    bot: client?.user?.tag || 'starting...'
+  });
 });
 
+// Start the server
+app.listen(PORT, () => {
+  console.log(`✅ Health check server running on port ${PORT}`);
+});
+
+// Discord Client with minimal intents
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.MessageContent,
   ]
 });
 
-// Müzik kuyruğu
-const queues = new Map();
-
+// Bot ready event
 client.once('ready', () => {
-  console.log(`✅ ${client.user.tag} botu aktif!`);
-  client.user.setActivity('VossBlade Famq', { type: 'WATCHING' });
+  console.log(`🚀 ${client.user.tag} is now online!`);
+  console.log(`📊 Serving ${client.guilds.cache.size} servers`);
+  
+  // Set bot activity
+  client.user.setPresence({
+    activities: [{ name: 'VossBlade Famq', type: ActivityType.Watching }],
+    status: 'online'
+  });
 });
 
-// Slash Command'leri oluşturma
+// Slash Commands
 const commands = [
+  // Help command
   new SlashCommandBuilder()
     .setName('help')
-    .setDescription('Bot komutlarını gösterir.'),
-  
+    .setDescription('Tüm bot komutlarını gösterir.'),
+
+  // Moderation commands
   new SlashCommandBuilder()
     .setName('clear')
     .setDescription('Belirtilen sayıda mesajı siler.')
-    .addIntegerOption(option => 
+    .addIntegerOption(option =>
       option.setName('miktar')
-        .setDescription('Silinecek mesaj sayısı')
-        .setRequired(true)),
-  
+        .setDescription('Silinecek mesaj sayısı (1-100)')
+        .setRequired(true)
+        .setMinValue(1)
+        .setMaxValue(100)),
+
   new SlashCommandBuilder()
     .setName('ban')
-    .setDescription('Kullanıcıyı banlar.')
-    .addUserOption(option => 
+    .setDescription('Kullanıcıyı sunucudan banlar.')
+    .addUserOption(option =>
       option.setName('kullanıcı')
         .setDescription('Banlanacak kullanıcı')
         .setRequired(true))
-    .addStringOption(option => 
+    .addStringOption(option =>
       option.setName('sebep')
         .setDescription('Ban sebebi')
         .setRequired(false)),
-  
+
+  // Bot commands
   new SlashCommandBuilder()
     .setName('ping')
     .setDescription('Botun ping değerini gösterir.'),
-  
+
+  // Music commands menu
   new SlashCommandBuilder()
     .setName('music')
     .setDescription('Müzik komutlarını gösterir.'),
-  
-  new SlashCommandBuilder()
-    .setName('play')
-    .setDescription('Şarkı çalar.')
-    .addStringOption(option => 
-      option.setName('şarkı')
-        .setDescription('Şarkı ismi veya link')
-        .setRequired(true)),
-  
-  new SlashCommandBuilder()
-    .setName('pause')
-    .setDescription('Şarkıyı duraklatır.'),
-  
-  new SlashCommandBuilder()
-    .setName('resume')
-    .setDescription('Şarkıya devam eder.'),
-  
-  new SlashCommandBuilder()
-    .setName('next')
-    .setDescription('Sıradaki şarkıya geçer.'),
-  
-  new SlashCommandBuilder()
-    .setName('replay')
-    .setDescription('Şarkıyı baştan çalar.'),
-  
-  new SlashCommandBuilder()
-    .setName('stop')
-    .setDescription('Müziği durdurur ve kanaldan ayrılır.'),
-  
-  new SlashCommandBuilder()
-    .setName('queue')
-    .setDescription('Şarkı kuyruğunu gösterir.'),
-  
+
+  // Fun commands
   new SlashCommandBuilder()
     .setName('avatar')
     .setDescription('Kullanıcının avatarını gösterir.')
-    .addUserOption(option => 
+    .addUserOption(option =>
       option.setName('kullanıcı')
         .setDescription('Avatarını görmek istediğiniz kullanıcı')
         .setRequired(false)),
-  
+
   new SlashCommandBuilder()
     .setName('serverinfo')
     .setDescription('Sunucu bilgilerini gösterir.'),
-  
+
   new SlashCommandBuilder()
     .setName('userinfo')
     .setDescription('Kullanıcı bilgilerini gösterir.')
-    .addUserOption(option => 
+    .addUserOption(option =>
       option.setName('kullanıcı')
         .setDescription('Bilgilerini görmek istediğiniz kullanıcı')
         .setRequired(false)),
-  
+
   new SlashCommandBuilder()
     .setName('say')
     .setDescription('Bota bir şey söyletir.')
-    .addStringOption(option => 
+    .addStringOption(option =>
       option.setName('mesaj')
         .setDescription('Botun söyleyeceği mesaj')
         .setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('random')
+    .setDescription('Rastgele sayı üretir.')
+    .addIntegerOption(option =>
+      option.setName('min')
+        .setDescription('Minimum değer')
+        .setRequired(false))
+    .addIntegerOption(option =>
+      option.setName('max')
+        .setDescription('Maksimum değer')
+        .setRequired(false)),
+
 ].map(command => command.toJSON());
 
-const rest = new (require('discord.js').REST)({ version: '10' }).setToken(process.env.TOKEN);
-
-(async () => {
+// Register slash commands
+client.once('ready', async () => {
   try {
-    console.log('Slash komutları yükleniyor...');
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-    console.log('Slash komutları başarıyla yüklendi!');
+    const rest = new (require('discord.js').REST)({ version: '10' }).setToken(process.env.TOKEN);
+    console.log('🔄 Slash komutları yükleniyor...');
+    
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: commands }
+    );
+    
+    console.log('✅ Slash komutları başarıyla yüklendi!');
   } catch (error) {
-    console.error(error);
+    console.error('❌ Slash komut yükleme hatası:', error);
   }
-})();
+});
 
-// Komut işleyici
-client.on('interactionCreate', async interaction => {
+// Command handler
+client.on('interactionCreate', async (interaction) => {
   if (!interaction.isCommand()) return;
 
-  const { commandName } = interaction;
+  const { commandName, options, user, guild, channel } = interaction;
 
   try {
+    // HELP COMMAND
     if (commandName === 'help') {
-      const embed = new EmbedBuilder()
-        .setTitle("VossBlade Famq Bot Commands")
-        .setDescription("**Moderator**\n- /clear\n- /ban\n\n**Music**\n- /play\n- /pause\n- /resume\n- /next\n- /replay\n- /stop\n- /queue\n- /music\n\n**General**\n- /avatar\n- /serverinfo\n- /userinfo\n- /say\n\n**Bot**\n- /ping")
-        .setImage("https://media.discordapp.net/attachments/962353412480069652/1428851964149764166/standard.gif?ex=68f40197&is=68f2b017&hm=b7b73097e5dd8c90fa0d8e2713d86b1402dca891fcc1bbe99de673cda456c666&=")
+      const helpEmbed = new EmbedBuilder()
+        .setTitle('🎮 VossBlade Famq Bot Komutları')
+        .setDescription('Aşağıda tüm bot komutlarını bulabilirsiniz:')
         .setColor(0x00AE86)
+        .setThumbnail(client.user.displayAvatarURL())
+        .addFields(
+          {
+            name: '🛡️ **Moderasyon**',
+            value: '• `/clear` - Mesajları temizler\n• `/ban` - Kullanıcıyı banlar',
+            inline: false
+          },
+          {
+            name: '🎵 **Müzik**',
+            value: '• `/music` - Müzik komutlarını gösterir\n*(Yakında eklenecek!)*',
+            inline: false
+          },
+          {
+            name: '😄 **Eğlence**',
+            value: '• `/avatar` - Avatar gösterir\n• `/serverinfo` - Sunucu bilgisi\n• `/userinfo` - Kullanıcı bilgisi\n• `/say` - Mesaj söyletir\n• `/random` - Rastgele sayı',
+            inline: false
+          },
+          {
+            name: '🤖 **Bot**',
+            value: '• `/ping` - Bot pingini gösterir\n• `/help` - Bu menüyü gösterir',
+            inline: false
+          }
+        )
+        .setImage('https://media.discordapp.net/attachments/962353412480069652/1428851964149764166/standard.gif?ex=68f40197&is=68f2b017&hm=b7b73097e5dd8c90fa0d8e2713d86b1402dca891fcc1bbe99de673cda456c666&=')
+        .setFooter({ text: `VossBlade Famq Bot | Toplam ${client.guilds.cache.size} sunucu`, iconURL: client.user.displayAvatarURL() })
         .setTimestamp();
-      
-      await interaction.reply({ embeds: [embed] });
+
+      await interaction.reply({ embeds: [helpEmbed] });
     }
 
+    // CLEAR COMMAND
     else if (commandName === 'clear') {
       if (!interaction.memberPermissions.has(PermissionsBitField.Flags.ManageMessages)) {
-        return interaction.reply({ content: 'Bu komutu kullanmak için "Mesajları Yönet" yetkisine sahip olmalısınız.', ephemeral: true });
+        return await interaction.reply({
+          content: '❌ Bu komutu kullanmak için **Mesajları Yönet** yetkisine sahip olmalısınız!',
+          ephemeral: true
+        });
       }
-      
-      const amount = interaction.options.getInteger('miktar');
-      
-      if (amount < 1 || amount > 100) {
-        return interaction.reply({ content: '1 ile 100 arasında bir sayı girmelisiniz.', ephemeral: true });
-      }
-      
+
+      const amount = options.getInteger('miktar');
+
       try {
-        await interaction.channel.bulkDelete(amount, true);
-        await interaction.reply({ content: `✅ ${amount} mesaj başarıyla silindi.`, ephemeral: true });
+        await interaction.deferReply({ ephemeral: true });
+        
+        const messages = await channel.bulkDelete(amount, true);
+        await interaction.editReply({
+          content: `✅ **${messages.size}** mesaj başarıyla silindi!`
+        });
       } catch (error) {
-        console.error(error);
-        await interaction.reply({ content: 'Mesajlar silinirken bir hata oluştu.', ephemeral: true });
+        console.error('Clear error:', error);
+        await interaction.editReply({
+          content: '❌ Mesajlar silinirken bir hata oluştu! (14 günden eski mesajlar silinemez)'
+        });
       }
     }
 
+    // BAN COMMAND
     else if (commandName === 'ban') {
       if (!interaction.memberPermissions.has(PermissionsBitField.Flags.BanMembers)) {
-        return interaction.reply({ content: 'Bu komutu kullanmak için "Üyeleri Yasakla" yetkisine sahip olmalısınız.', ephemeral: true });
+        return await interaction.reply({
+          content: '❌ Bu komutu kullanmak için **Üyeleri Yasakla** yetkisine sahip olmalısınız!',
+          ephemeral: true
+        });
       }
-      
-      const user = interaction.options.getUser('kullanıcı');
-      const reason = interaction.options.getString('sebep') || 'Sebep belirtilmedi.';
-      
+
+      const targetUser = options.getUser('kullanıcı');
+      const reason = options.getString('sebep') || 'Sebep belirtilmedi.';
+
+      // Check if user exists and is bannable
+      const member = guild.members.cache.get(targetUser.id);
+      if (!member) {
+        return await interaction.reply({
+          content: '❌ Kullanıcı bulunamadı!',
+          ephemeral: true
+        });
+      }
+
+      if (!member.bannable) {
+        return await interaction.reply({
+          content: '❌ Bu kullanıcıyı banlayamıyorum! (Yetki yetersiz)',
+          ephemeral: true
+        });
+      }
+
       try {
-        await interaction.guild.members.ban(user, { reason });
-        await interaction.reply({ content: `✅ ${user.tag} başarıyla banlandı. Sebep: ${reason}`, ephemeral: true });
+        await member.ban({ reason: `${reason} - Banlayan: ${user.tag}` });
+        
+        const banEmbed = new EmbedBuilder()
+          .setTitle('🔨 Kullanıcı Banlandı')
+          .setColor(0xFF0000)
+          .addFields(
+            { name: 'Kullanıcı', value: `${targetUser.tag} (${targetUser.id})`, inline: true },
+            { name: 'Banlayan', value: user.tag, inline: true },
+            { name: 'Sebep', value: reason, inline: false }
+          )
+          .setTimestamp()
+          .setFooter({ text: 'VossBlade Famq Moderation' });
+
+        await interaction.reply({ embeds: [banEmbed] });
       } catch (error) {
-        console.error(error);
-        await interaction.reply({ content: 'Kullanıcı banlanırken bir hata oluştu.', ephemeral: true });
+        console.error('Ban error:', error);
+        await interaction.reply({
+          content: '❌ Kullanıcı banlanırken bir hata oluştu!',
+          ephemeral: true
+        });
       }
     }
 
+    // PING COMMAND
     else if (commandName === 'ping') {
-      await interaction.reply(`🏓 Pong! Bot gecikmesi: ${client.ws.ping}ms`);
+      const sent = await interaction.reply({ content: '🏓 Pinging...', fetchReply: true });
+      const ping = sent.createdTimestamp - interaction.createdTimestamp;
+
+      const pingEmbed = new EmbedBuilder()
+        .setTitle('📊 Bot İstatistikleri')
+        .setColor(0x00FF00)
+        .addFields(
+          { name: '🔄 API Gecikmesi', value: `\`${client.ws.ping}ms\``, inline: true },
+          { name: '🤖 Bot Gecikmesi', value: `\`${ping}ms\``, inline: true },
+          { name: '🕒 Çalışma Süresi', value: formatUptime(process.uptime()), inline: true }
+        )
+        .setFooter({ text: `İsteyen: ${user.tag}`, iconURL: user.displayAvatarURL() })
+        .setTimestamp();
+
+      await interaction.editReply({ content: '', embeds: [pingEmbed] });
     }
 
+    // MUSIC COMMAND
     else if (commandName === 'music') {
-      const embed = new EmbedBuilder()
-        .setTitle("VossBlade Famq Music Commands")
-        .setDescription("/play - Şarkı çalar\n/pause - Şarkıyı duraklatır\n/resume - Şarkıya devam eder\n/next - Sıradaki şarkıya geçer\n/replay - Şarkıyı baştan çalar\n/stop - Müziği durdurur\n/queue - Kuyruğu gösterir")
+      const musicEmbed = new EmbedBuilder()
+        .setTitle('🎵 VossBlade Famq Müzik Sistemi')
+        .setDescription('Müzik komutları yakında eklenecek! 🎶')
         .setColor(0x0099FF)
+        .addFields(
+          { name: 'Planlanan Komutlar', value: '• `/play` - Şarkı çalar\n• `/pause` - Duraklatır\n• `/resume` - Devam ettirir\n• `/stop` - Durdurur\n• `/queue` - Kuyruğu gösterir', inline: false },
+          { name: 'Not', value: 'Müzik sistemi şu anda geliştirme aşamasındadır. En kısa sürede eklenecek!', inline: false }
+        )
+        .setFooter({ text: 'VossBlade Famq Music', iconURL: client.user.displayAvatarURL() })
         .setTimestamp();
-      
-      await interaction.reply({ embeds: [embed] });
+
+      await interaction.reply({ embeds: [musicEmbed] });
     }
 
-    // Müzik komutları
-    else if (commandName === 'play') {
-      await handlePlayCommand(interaction);
-    }
-
-    else if (commandName === 'pause') {
-      await handlePauseCommand(interaction);
-    }
-
-    else if (commandName === 'resume') {
-      await handleResumeCommand(interaction);
-    }
-
-    else if (commandName === 'next') {
-      await handleNextCommand(interaction);
-    }
-
-    else if (commandName === 'replay') {
-      await handleReplayCommand(interaction);
-    }
-
-    else if (commandName === 'stop') {
-      await handleStopCommand(interaction);
-    }
-
-    else if (commandName === 'queue') {
-      await handleQueueCommand(interaction);
-    }
-
-    // Eğlenceli komutlar
+    // AVATAR COMMAND
     else if (commandName === 'avatar') {
-      const user = interaction.options.getUser('kullanıcı') || interaction.user;
+      const targetUser = options.getUser('kullanıcı') || user;
       
-      const embed = new EmbedBuilder()
-        .setTitle(`${user.username} avatarı`)
-        .setImage(user.displayAvatarURL({ size: 4096, dynamic: true }))
+      const avatarEmbed = new EmbedBuilder()
+        .setTitle(`📷 ${targetUser.username} Avatarı`)
         .setColor(0x00AE86)
+        .setImage(targetUser.displayAvatarURL({ size: 4096, dynamic: true }))
+        .setFooter({ text: `İsteyen: ${user.tag}`, iconURL: user.displayAvatarURL() })
         .setTimestamp();
-      
-      await interaction.reply({ embeds: [embed] });
+
+      await interaction.reply({ embeds: [avatarEmbed] });
     }
 
+    // SERVERINFO COMMAND
     else if (commandName === 'serverinfo') {
       const { guild } = interaction;
-      
-      const embed = new EmbedBuilder()
-        .setTitle(`${guild.name} Sunucu Bilgileri`)
+      const owner = await guild.fetchOwner();
+
+      const serverEmbed = new EmbedBuilder()
+        .setTitle(`📊 ${guild.name} Sunucu Bilgileri`)
         .setThumbnail(guild.iconURL({ dynamic: true }))
-        .addFields(
-          { name: 'Sunucu Sahibi', value: `<@${guild.ownerId}>`, inline: true },
-          { name: 'Üye Sayısı', value: `${guild.memberCount}`, inline: true },
-          { name: 'Kanal Sayısı', value: `${guild.channels.cache.size}`, inline: true },
-          { name: 'Oluşturulma Tarihi', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: true },
-          { name: 'Sunucu ID', value: guild.id, inline: true },
-          { name: 'Boost Seviyesi', value: `${guild.premiumTier}`, inline: true }
-        )
         .setColor(0x0099FF)
-        .setTimestamp();
-      
-      await interaction.reply({ embeds: [embed] });
-    }
-
-    else if (commandName === 'userinfo') {
-      const user = interaction.options.getUser('kullanıcı') || interaction.user;
-      const member = interaction.guild.members.cache.get(user.id);
-      
-      const embed = new EmbedBuilder()
-        .setTitle(`${user.username} Kullanıcı Bilgileri`)
-        .setThumbnail(user.displayAvatarURL({ dynamic: true }))
         .addFields(
-          { name: 'Kullanıcı Adı', value: user.tag, inline: true },
-          { name: 'ID', value: user.id, inline: true },
-          { name: 'Hesap Oluşturulma', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
-          { name: 'Sunucuya Katılma', value: member ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : 'Bilinmiyor', inline: true },
-          { name: 'Roller', value: member ? member.roles.cache.map(role => role.toString()).join(', ').substring(0, 1024) || 'Rol yok' : 'Bilinmiyor', inline: false }
+          { name: '👑 Sunucu Sahibi', value: `${owner.user.tag}`, inline: true },
+          { name: '🆔 Sunucu ID', value: guild.id, inline: true },
+          { name: '📅 Oluşturulma', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: true },
+          { name: '👥 Üye Sayısı', value: `**${guild.memberCount}** üye`, inline: true },
+          { name: '📊 Boost Seviyesi', value: `Seviye ${guild.premiumTier}`, inline: true },
+          { name: '🚀 Boost Sayısı', value: `**${guild.premiumSubscriptionCount}** boost`, inline: true },
+          { name: '🔊 Kanallar', value: `**${guild.channels.cache.size}** kanal`, inline: true },
+          { name: '😎 Emojiler', value: `**${guild.emojis.cache.size}** emoji`, inline: true },
+          { name: '🛡️ Roller', value: `**${guild.roles.cache.size}** rol`, inline: true }
         )
-        .setColor(0x00AE86)
+        .setFooter({ text: `İsteyen: ${user.tag}`, iconURL: user.displayAvatarURL() })
         .setTimestamp();
-      
-      await interaction.reply({ embeds: [embed] });
+
+      await interaction.reply({ embeds: [serverEmbed] });
     }
 
-    else if (commandName === 'say') {
-      const message = interaction.options.getString('mesaj');
-      
-      if (!interaction.memberPermissions.has(PermissionsBitField.Flags.ManageMessages)) {
-        return interaction.reply({ content: 'Bu komutu kullanmak için "Mesajları Yönet" yetkisine sahip olmalısınız.', ephemeral: true });
+    // USERINFO COMMAND
+    else if (commandName === 'userinfo') {
+      const targetUser = options.getUser('kullanıcı') || user;
+      const member = guild.members.cache.get(targetUser.id);
+
+      const userEmbed = new EmbedBuilder()
+        .setTitle(`👤 ${targetUser.tag} Kullanıcı Bilgileri`)
+        .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+        .setColor(0x00AE86)
+        .addFields(
+          { name: '🆔 Kullanıcı ID', value: targetUser.id, inline: true },
+          { name: '👤 Kullanıcı Adı', value: targetUser.tag, inline: true },
+          { name: '📅 Hesap Oluşturma', value: `<t:${Math.floor(targetUser.createdTimestamp / 1000)}:R>`, inline: true },
+          { name: '📅 Sunucuya Katılma', value: member ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : 'Bilinmiyor', inline: true },
+          { name: '🎨 Rol Sayısı', value: member ? `**${member.roles.cache.size - 1}** rol` : 'Bilinmiyor', inline: true },
+          { name: '🤖 Bot mu?', value: targetUser.bot ? 'Evet 🤖' : 'Haydi 👤', inline: true }
+        )
+        .setFooter({ text: `İsteyen: ${user.tag}`, iconURL: user.displayAvatarURL() })
+        .setTimestamp();
+
+      if (member && member.roles.cache.size > 1) {
+        const roles = member.roles.cache
+          .filter(role => role.id !== guild.id)
+          .map(role => role.toString())
+          .join(', ')
+          .slice(0, 1024);
+
+        userEmbed.addFields({ 
+          name: `🎭 Roller (${member.roles.cache.size - 1})`, 
+          value: roles || 'Rol yok', 
+          inline: false 
+        });
       }
+
+      await interaction.reply({ embeds: [userEmbed] });
+    }
+
+    // SAY COMMAND
+    else if (commandName === 'say') {
+      if (!interaction.memberPermissions.has(PermissionsBitField.Flags.ManageMessages)) {
+        return await interaction.reply({
+          content: '❌ Bu komutu kullanmak için **Mesajları Yönet** yetkisine sahip olmalısınız!',
+          ephemeral: true
+        });
+      }
+
+      const message = options.getString('mesaj');
       
-      await interaction.reply({ content: 'Mesaj gönderildi!', ephemeral: true });
-      await interaction.channel.send(message);
+      await interaction.reply({ content: '✅ Mesaj gönderildi!', ephemeral: true });
+      await channel.send(message);
+    }
+
+    // RANDOM COMMAND
+    else if (commandName === 'random') {
+      const min = options.getInteger('min') || 1;
+      const max = options.getInteger('max') || 100;
+      
+      if (min >= max) {
+        return await interaction.reply({
+          content: '❌ Minimum değer maksimum değerden küçük olmalıdır!',
+          ephemeral: true
+        });
+      }
+
+      const randomNum = Math.floor(Math.random() * (max - min + 1)) + min;
+      
+      const randomEmbed = new EmbedBuilder()
+        .setTitle('🎲 Rastgele Sayı Üretici')
+        .setColor(0x9B59B6)
+        .addFields(
+          { name: 'Aralık', value: `${min} - ${max}`, inline: true },
+          { name: 'Sonuç', value: `**${randomNum}**`, inline: true }
+        )
+        .setFooter({ text: `İsteyen: ${user.tag}`, iconURL: user.displayAvatarURL() })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [randomEmbed] });
     }
 
   } catch (error) {
-    console.error('Komut işleme hatası:', error);
+    console.error(`Command error (${commandName}):`, error);
+    
     if (!interaction.replied) {
-      await interaction.reply({ content: 'Komut işlenirken bir hata oluştu!', ephemeral: true });
+      await interaction.reply({
+        content: '❌ Komut işlenirken bir hata oluştu!',
+        ephemeral: true
+      });
     }
   }
 });
 
-// YouTube'dan şarkı arama fonksiyonu
-async function searchYouTube(query) {
-  try {
-    const searchResult = await yts(query);
-    return searchResult.videos.length > 0 ? searchResult.videos[0] : null;
-  } catch (error) {
-    console.error('YouTube arama hatası:', error);
-    return null;
-  }
+// Utility functions
+function formatUptime(seconds) {
+  const days = Math.floor(seconds / (24 * 60 * 60));
+  const hours = Math.floor((seconds % (24 * 60 * 60)) / (60 * 60));
+  const minutes = Math.floor((seconds % (60 * 60)) / 60);
+  const secs = Math.floor(seconds % 60);
+
+  const parts = [];
+  if (days > 0) parts.push(`${days}g`);
+  if (hours > 0) parts.push(`${hours}s`);
+  if (minutes > 0) parts.push(`${minutes}d`);
+  if (secs > 0 || parts.length === 0) parts.push(`${secs}sn`);
+
+  return parts.join(' ');
 }
 
-// Müzik komutları
-async function handlePlayCommand(interaction) {
-  const voiceChannel = interaction.member.voice.channel;
-  if (!voiceChannel) {
-    return interaction.reply({ content: '❌ Müzik çalmak için bir ses kanalında olmalısınız!', ephemeral: true });
-  }
+// Error handling
+client.on('error', (error) => {
+  console.error('❌ Discord Client Error:', error);
+});
 
-  const query = interaction.options.getString('şarkı');
-  
-  try {
-    await interaction.deferReply();
-    
-    let video;
-    
-    // YouTube URL kontrolü
-    if (ytdl.validateURL(query)) {
-      try {
-        const videoInfo = await ytdl.getInfo(query);
-        video = {
-          title: videoInfo.videoDetails.title,
-          url: videoInfo.videoDetails.video_url,
-          duration: videoInfo.videoDetails.lengthSeconds,
-          thumbnail: videoInfo.videoDetails.thumbnails[0].url
-        };
-      } catch (error) {
-        console.error('URL bilgi alma hatası:', error);
-        return await interaction.editReply({ content: '❌ Geçersiz YouTube linki!' });
-      }
-    } else {
-      // Şarkı ismiyle arama
-      video = await searchYouTube(query);
-      if (!video) {
-        return await interaction.editReply({ content: '❌ Şarkı bulunamadı! Lütfen farklı bir isim veya link deneyin.' });
-      }
-    }
+process.on('unhandledRejection', (error) => {
+  console.error('❌ Unhandled Promise Rejection:', error);
+});
 
-    // Kuyruk yapısını al veya oluştur
-    let queue = queues.get(interaction.guildId);
-    
-    if (!queue) {
-      queue = {
-        voiceChannel: voiceChannel,
-        textChannel: interaction.channel,
-        connection: null,
-        songs: [],
-        player: createAudioPlayer(),
-        playing: true,
-        volume: 0.5
-      };
-      queues.set(interaction.guildId, queue);
-    }
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+});
 
-    // Şarkıyı kuyruğa ekle
-    queue.songs.push({
-      title: video.title,
-      url: video.url,
-      duration: video.duration,
-      thumbnail: video.thumbnail,
-      requestedBy: interaction.user.tag
-    });
-
-    // Eğer bot ses kanalında değilse, bağlan
-    if (!queue.connection) {
-      try {
-        const connection = joinVoiceChannel({
-          channelId: voiceChannel.id,
-          guildId: interaction.guildId,
-          adapterCreator: interaction.guild.voiceAdapterCreator,
-        });
-        
-        queue.connection = connection;
-        queue.connection.subscribe(queue.player);
-        
-        // İlk şarkıyı çal
-        playSong(interaction.guildId, queue.songs[0]);
-        
-        const embed = new EmbedBuilder()
-          .setTitle('🎵 Şimdi Oynatılıyor')
-          .setDescription(`[${video.title}](${video.url})`)
-          .setThumbnail(video.thumbnail)
-          .addFields(
-            { name: 'Süre', value: formatDuration(video.duration), inline: true },
-            { name: 'İsteyen', value: interaction.user.tag, inline: true }
-          )
-          .setColor(0x00FF00);
-        
-        await interaction.editReply({ embeds: [embed] });
-      } catch (error) {
-        console.error('Ses kanalına bağlanma hatası:', error);
-        queues.delete(interaction.guildId);
-        return await interaction.editReply({ content: '❌ Ses kanalına bağlanırken bir hata oluştu!' });
-      }
-    } else {
-      await interaction.editReply(`🎵 **${video.title}** sıraya eklendi! (Sıra: ${queue.songs.length})`);
-    }
-
-  } catch (error) {
-    console.error('Play komutu hatası:', error);
-    await interaction.editReply({ content: '❌ Şarkı çalınırken beklenmeyen bir hata oluştu!' });
-  }
-}
-
-function playSong(guildId, song) {
-  const queue = queues.get(guildId);
-  if (!song) {
-    if (queue.connection) {
-      queue.connection.destroy();
-    }
-    queues.delete(guildId);
-    return;
-  }
-
-  try {
-    const stream = ytdl(song.url, {
-      filter: 'audioonly',
-      quality: 'highestaudio',
-      highWaterMark: 1 << 25
-    });
-
-    const resource = createAudioResource(stream);
-    queue.player.play(resource);
-
-    queue.player.on(AudioPlayerStatus.Idle, () => {
-      queue.songs.shift();
-      playSong(guildId, queue.songs[0]);
-    });
-
-    queue.player.on('error', error => {
-      console.error('Oynatıcı hatası:', error);
-      queue.textChannel.send('❌ Şarkı çalınırken bir hata oluştu!');
-      queue.songs.shift();
-      playSong(guildId, queue.songs[0]);
-    });
-
-  } catch (error) {
-    console.error('Şarkı çalma hatası:', error);
-    queue.textChannel.send('❌ Şarkı çalınırken bir hata oluştu!');
-    queue.songs.shift();
-    playSong(guildId, queue.songs[0]);
-  }
-}
-
-async function handlePauseCommand(interaction) {
-  const voiceChannel = interaction.member.voice.channel;
-  const queue = queues.get(interaction.guildId);
-  
-  if (!voiceChannel) {
-    return interaction.reply({ content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', ephemeral: true });
-  }
-
-  if (!queue || !queue.playing) {
-    return interaction.reply({ content: '❌ Şu anda çalan bir şarkı yok!', ephemeral: true });
-  }
-
-  queue.player.pause();
-  queue.playing = false;
-  await interaction.reply('⏸️ Şarkı duraklatıldı.');
-}
-
-async function handleResumeCommand(interaction) {
-  const voiceChannel = interaction.member.voice.channel;
-  const queue = queues.get(interaction.guildId);
-  
-  if (!voiceChannel) {
-    return interaction.reply({ content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', ephemeral: true });
-  }
-
-  if (!queue || queue.playing) {
-    return interaction.reply({ content: '❌ Şu anda duraklatılmış bir şarkı yok!', ephemeral: true });
-  }
-
-  queue.player.unpause();
-  queue.playing = true;
-  await interaction.reply('▶️ Şarkı devam ettiriliyor.');
-}
-
-async function handleNextCommand(interaction) {
-  const voiceChannel = interaction.member.voice.channel;
-  const queue = queues.get(interaction.guildId);
-  
-  if (!voiceChannel) {
-    return interaction.reply({ content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', ephemeral: true });
-  }
-
-  if (!queue || queue.songs.length < 2) {
-    return interaction.reply({ content: '❌ Sırada başka şarkı yok!', ephemeral: true });
-  }
-
-  queue.player.stop();
-  await interaction.reply('⏭️ Sıradaki şarkıya geçiliyor.');
-}
-
-async function handleReplayCommand(interaction) {
-  const voiceChannel = interaction.member.voice.channel;
-  const queue = queues.get(interaction.guildId);
-  
-  if (!voiceChannel) {
-    return interaction.reply({ content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', ephemeral: true });
-  }
-
-  if (!queue || !queue.songs.length) {
-    return interaction.reply({ content: '❌ Şu anda çalan bir şarkı yok!', ephemeral: true });
-  }
-
-  const currentSong = queue.songs[0];
-  queue.player.stop();
-  setTimeout(() => {
-    queue.songs.unshift(currentSong);
-  }, 100);
-  
-  await interaction.reply('🔂 Şarkı baştan çalınıyor.');
-}
-
-async function handleStopCommand(interaction) {
-  const voiceChannel = interaction.member.voice.channel;
-  const queue = queues.get(interaction.guildId);
-  
-  if (!voiceChannel) {
-    return interaction.reply({ content: '❌ Müzik komutlarını kullanmak için bir ses kanalında olmalısınız!', ephemeral: true });
-  }
-
-  if (!queue) {
-    return interaction.reply({ content: '❌ Zaten müzik çalmıyor!', ephemeral: true });
-  }
-
-  queue.songs = [];
-  queue.player.stop();
-  
-  if (queue.connection) {
-    queue.connection.destroy();
-  }
-  
-  queues.delete(interaction.guildId);
-  await interaction.reply('⏹️ Müzik durduruldu ve kanaldan ayrıldı.');
-}
-
-async function handleQueueCommand(interaction) {
-  const queue = queues.get(interaction.guildId);
-  
-  if (!queue || !queue.songs.length) {
-    return interaction.reply({ content: '❌ Kuyrukta şarkı yok!', ephemeral: true });
-  }
-
-  const queueList = queue.songs.slice(0, 10).map((song, index) => 
-    `**${index + 1}.** [${song.title}](${song.url}) - ${song.requestedBy}`
-  ).join('\n');
-
-  const embed = new EmbedBuilder()
-    .setTitle('🎵 Şarkı Kuyruğu')
-    .setDescription(queueList)
-    .setColor(0x0099FF)
-    .setFooter({ text: `Toplam ${queue.songs.length} şarkı` });
-
-  await interaction.reply({ embeds: [embed] });
-}
-
-// Süre formatlama fonksiyonu
-function formatDuration(seconds) {
-  if (!seconds) return 'Bilinmiyor';
-  
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  } else {
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
-  }
-}
-
-client.login(process.env.TOKEN);
+// Login to Discord
+client.login(process.env.TOKEN).catch(error => {
+  console.error('❌ Discord login failed:', error);
+  process.exit(1);
+});
