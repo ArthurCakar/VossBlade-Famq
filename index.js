@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, SlashCommandBuilder, Routes, ActivityType, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, SlashCommandBuilder, Routes, ActivityType, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const express = require('express');
 
 // Express app for health check
@@ -131,6 +131,10 @@ const commands = [
     .setName('reminder')
     .setDescription('Periyodik hatırlatıcı oluşturur.'),
 
+  new SlashCommandBuilder()
+    .setName('reminder-remove')
+    .setDescription('Mevcut bir hatırlatıcıyı kaldırır.'),
+
 ].map(command => command.toJSON());
 
 // Register slash commands
@@ -175,7 +179,7 @@ client.on('interactionCreate', async (interaction) => {
             },
             {
               name: '😄 **Eğlence**',
-              value: '• `/avatar` - Avatar gösterir\n• `/serverinfo` - Sunucu bilgisi\n• `/userinfo` - Kullanıcı bilgisi\n• `/kaccm` - Kaç cm olduğunu söyler\n• `/say` - Bota mesaj söyletir\n• `/reminder` - Periyodik hatırlatıcı oluşturur',
+              value: '• `/avatar` - Avatar gösterir\n• `/serverinfo` - Sunucu bilgisi\n• `/userinfo` - Kullanıcı bilgisi\n• `/kaccm` - Kaç cm olduğunu söyler\n• `/say` - Bota mesaj söyletir\n• `/reminder` - Periyodik hatırlatıcı oluşturur\n• `/reminder-remove` - Hatırlatıcıyı kaldırır',
               inline: false
             },
             {
@@ -354,6 +358,10 @@ client.on('interactionCreate', async (interaction) => {
         await handleReminderCommand(interaction);
       }
 
+      else if (commandName === 'reminder-remove') {
+        await handleReminderRemoveCommand(interaction);
+      }
+
     } catch (error) {
       console.error(`Command error (${commandName}):`, error);
       
@@ -366,6 +374,10 @@ client.on('interactionCreate', async (interaction) => {
     }
   } else if (interaction.isModalSubmit()) {
     await handleModalSubmit(interaction);
+  } else if (interaction.isStringSelectMenu()) {
+    if (interaction.customId === 'reminderRemoveSelect') {
+      await handleReminderRemoveSelect(interaction);
+    }
   }
 });
 
@@ -493,6 +505,89 @@ async function handleModalSubmit(interaction) {
         ephemeral: true 
       });
     }
+  }
+}
+
+async function handleReminderRemoveCommand(interaction) {
+  try {
+    const guildReminders = Array.from(reminders.entries())
+      .filter(([reminderId, reminder]) => reminderId.startsWith(interaction.guild.id))
+      .map(([reminderId, reminder]) => ({
+        reminderId,
+        ...reminder
+      }));
+
+    if (guildReminders.length === 0) {
+      return await interaction.reply({
+        content: '❌ Bu sunucuda hiç hatırlatıcı bulunmamaktadır.',
+        ephemeral: true
+      });
+    }
+
+    const options = guildReminders.map(reminder => ({
+      label: reminder.name.length > 25 ? reminder.name.substring(0, 22) + '...' : reminder.name,
+      description: `Mesaj: ${reminder.message.substring(0, 50)}...`,
+      value: reminder.reminderId
+    }));
+
+    const selectMenu = new ActionRowBuilder()
+      .addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('reminderRemoveSelect')
+          .setPlaceholder('Silmek istediğiniz hatırlatıcıyı seçin...')
+          .addOptions(options)
+      );
+
+    await interaction.reply({
+      content: '**Silmek istediğiniz hatırlatıcıyı seçin:**',
+      components: [selectMenu],
+      ephemeral: true
+    });
+
+  } catch (error) {
+    console.error('Reminder remove komutu hatası:', error);
+    await interaction.reply({
+      content: '❌ Hatırlatıcıları listelerken bir hata oluştu!',
+      ephemeral: true
+    });
+  }
+}
+
+async function handleReminderRemoveSelect(interaction) {
+  try {
+    const reminderId = interaction.values[0];
+    const reminder = reminders.get(reminderId);
+
+    if (!reminder) {
+      return await interaction.reply({
+        content: '❌ Hatırlatıcı bulunamadı!',
+        ephemeral: true
+      });
+    }
+
+    reminders.delete(reminderId);
+
+    const embed = new EmbedBuilder()
+      .setTitle('✅ Hatırlatıcı Silindi!')
+      .setColor(0x00FF00)
+      .addFields(
+        { name: 'İsim', value: reminder.name, inline: true },
+        { name: 'Kanal', value: `<#${reminder.channelId}>`, inline: true },
+        { name: 'Etiketlenecek', value: `<@${reminder.memberId}>`, inline: true },
+        { name: 'Mesaj', value: reminder.message.length > 1024 ? reminder.message.substring(0, 1021) + '...' : reminder.message, inline: false },
+        { name: 'Aralık', value: `${reminder.interval} dakika`, inline: true },
+        { name: 'Oluşturan', value: reminder.createdBy, inline: true }
+      )
+      .setTimestamp();
+
+    await interaction.update({ content: '', embeds: [embed], components: [] });
+
+  } catch (error) {
+    console.error('Reminder remove select hatası:', error);
+    await interaction.reply({
+      content: '❌ Hatırlatıcı silinirken bir hata oluştu!',
+      ephemeral: true
+    });
   }
 }
 
