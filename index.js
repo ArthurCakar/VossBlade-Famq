@@ -92,6 +92,10 @@ const commands = [
     .setDescription('Botun ping değerini gösterir.'),
 
   new SlashCommandBuilder()
+    .setName('status')
+    .setDescription('Botun durum istatistiklerini gösterir.'),
+
+  new SlashCommandBuilder()
     .setName('kaccm')
     .setDescription('Kullanıcının kaç cm olduğunu söyler.')
     .addUserOption(option =>
@@ -184,11 +188,11 @@ client.on('interactionCreate', async (interaction) => {
             },
             {
               name: '🤖 **Bot**',
-              value: '• `/ping` - Bot pingini gösterir\n• `/help` - Bu menüyü gösterir',
+              value: '• `/ping` - Bot pingini gösterir\n• `/status` - Bot istatistiklerini gösterir\n• `/help` - Bu menüyü gösterir',
               inline: false
             }
           )
-          .setImage('https://media.discordapp.net/attachments/962353412480069652/1429871003936493579/standard_4.gif?ex=68fc53e5&is=68fb0265&hm=45c6312606f3a07506abaf28bfdb3b898479a02be7a9e7fe44e4854dde540d45&=')
+          .setImage('https://media.discordapp.net/attachments/962353412480069652/1429871003936493579/standard_4.gif?ex=690c25e5&is=690ad465&hm=83c58d33b11f269e845ae1fbcf6f597db380e251bb02028b0b0c75677e12d403&=')
           .setFooter({ text: `VossBlade Famq Bot | Toplam ${client.guilds.cache.size} sunucu`, iconURL: client.user.displayAvatarURL() })
           .setTimestamp();
 
@@ -264,6 +268,10 @@ client.on('interactionCreate', async (interaction) => {
           );
 
         await interaction.editReply({ content: '', embeds: [pingEmbed] });
+      }
+
+      else if (commandName === 'status') {
+        await handleStatusCommand(interaction);
       }
 
       else if (commandName === 'kaccm') {
@@ -380,6 +388,65 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 });
+
+// STATUS KOMUTU FONKSİYONU
+async function handleStatusCommand(interaction) {
+  try {
+    const serverCount = client.guilds.cache.size;
+    
+    let totalMembers = 0;
+    client.guilds.cache.forEach(guild => {
+      totalMembers += guild.memberCount;
+    });
+
+    const uptime = process.uptime();
+    const days = Math.floor(uptime / (24 * 60 * 60));
+    const hours = Math.floor((uptime % (24 * 60 * 60)) / (60 * 60));
+    const minutes = Math.floor((uptime % (60 * 60)) / 60);
+    const seconds = Math.floor(uptime % 60);
+
+    const uptimeString = `${days}g ${hours}s ${minutes}d ${seconds}sn`;
+
+    const usedMemory = process.memoryUsage().rss / 1024 / 1024;
+    const totalMemory = require('os').totalmem() / 1024 / 1024;
+
+    const statusEmbed = new EmbedBuilder()
+      .setTitle(`🤖 ${client.user.username} Durumu`)
+      .setColor(0x00AE86)
+      .setThumbnail(client.user.displayAvatarURL({ dynamic: true, size: 256 }))
+      .addFields(
+        {
+          name: '📊 **Sunucu İstatistikleri**',
+          value: `┣ Sunucu Sayısı: **${serverCount}**\n┗ Toplam Kullanıcı: **${totalMembers.toLocaleString()}**`,
+          inline: false
+        },
+        {
+          name: '⚡ **Performans**',
+          value: `┣ Ping: **${client.ws.ping}ms**\n┗ Bellek Kullanımı: **${usedMemory.toFixed(2)}MB / ${totalMemory.toFixed(2)}MB**`,
+          inline: false
+        },
+        {
+          name: '🕒 **Sistem**',
+          value: `┣ Çalışma Süresi: **${uptimeString}**\n┗ Node.js: **${process.version}**\n┗ Discord.js: **${require('discord.js').version}**`,
+          inline: false
+        }
+      )
+      .setFooter({ 
+        text: `VossBlade Famq Bot | ${new Date().toLocaleDateString('tr-TR')}`, 
+        iconURL: client.user.displayAvatarURL() 
+      })
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [statusEmbed] });
+
+  } catch (error) {
+    console.error('Status komutu hatası:', error);
+    await interaction.reply({
+      content: '❌ Durum bilgileri alınırken bir hata oluştu!',
+      ephemeral: true
+    });
+  }
+}
 
 // REMİNDER FONKSİYONLARI
 
