@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, SlashCommandBuilder, Routes, ActivityType, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, SlashCommandBuilder, Routes, ActivityType, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
 
 // Express app for health check
@@ -38,13 +38,43 @@ const client = new Client({
 // Hatırlatıcılar için Map
 const reminders = new Map();
 
+// Ekonomi Sistemi için Map
+const userEconomy = new Map();
+
+// Sanal Borsa Sistemi
+const virtualStocks = {
+  "TechCorp": { price: 100, volatility: 0.1 },
+  "GameStudio": { price: 80, volatility: 0.15 },
+  "FoodChain": { price: 50, volatility: 0.2 },
+  "MusicStream": { price: 120, volatility: 0.08 },
+  "FashionHub": { price: 70, volatility: 0.12 }
+};
+
+// Meslekler
+const jobs = {
+  "💻 Developer": { min: 100, max: 300, cooldown: 300000 },
+  "🎨 Designer": { min: 80, max: 250, cooldown: 240000 },
+  "🚀 Streamer": { min: 150, max: 400, cooldown: 360000 },
+  "🎮 Gamer": { min: 60, max: 200, cooldown: 180000 },
+  "📱 Influencer": { min: 120, max: 350, cooldown: 300000 }
+};
+
+// Başarılar
+const achievements = {
+  "first_million": { name: "İlk Milyon", reward: 50000 },
+  "daily_streak_7": { name: "Sadık Kullanıcı", reward: 10000 },
+  "work_master": { name: "Çalışkan", reward: 15000 },
+  "investment_king": { name: "Yatırım Ustası", reward: 20000 },
+  "gamble_pro": { name: "Şanslı", reward: 10000 }
+};
+
 // Bot ready event
 client.once('ready', () => {
   console.log(`🚀 ${client.user.tag} is now online!`);
   console.log(`📊 Serving ${client.guilds.cache.size} servers`);
   
   client.user.setPresence({
-    activities: [{ name: 'VossBlade Famq | /help', type: ActivityType.Watching }],
+    activities: [{ name: 'FamqVerse Economy | /help', type: ActivityType.Playing }],
     status: 'online'
   });
 
@@ -56,8 +86,42 @@ client.once('ready', () => {
         sendReminder(reminderId);
       }
     });
-  }, 30000); // 30 saniyede bir kontrol et
+  }, 30000);
+
+  // Borsa fiyatlarını güncelle (30 saniyede bir)
+  setInterval(() => {
+    updateStockPrices();
+  }, 30000);
 });
+
+// Borsa fiyatlarını güncelleme fonksiyonu
+function updateStockPrices() {
+  for (const stock in virtualStocks) {
+    const change = (Math.random() - 0.5) * 2 * virtualStocks[stock].volatility;
+    virtualStocks[stock].price = Math.max(10, virtualStocks[stock].price * (1 + change));
+    virtualStocks[stock].price = Math.round(virtualStocks[stock].price * 100) / 100;
+  }
+}
+
+// Kullanıcı ekonomisi başlatma fonksiyonu
+function initializeUserEconomy(userId) {
+  if (!userEconomy.has(userId)) {
+    userEconomy.set(userId, {
+      balance: 1000,
+      bank: 0,
+      level: 1,
+      xp: 0,
+      job: null,
+      lastWork: 0,
+      dailyStreak: 0,
+      lastDaily: 0,
+      achievements: [],
+      inventory: [],
+      investments: {}
+    });
+  }
+  return userEconomy.get(userId);
+}
 
 // Slash Commands
 const commands = [
@@ -139,6 +203,35 @@ const commands = [
     .setName('reminder-remove')
     .setDescription('Mevcut bir hatırlatıcıyı kaldırır.'),
 
+  // EKONOMİ KOMUTLARI
+  new SlashCommandBuilder()
+    .setName('daily')
+    .setDescription('Günlük ödülünü al.'),
+
+  new SlashCommandBuilder()
+    .setName('work')
+    .setDescription('Çalışarak para kazan.'),
+
+  new SlashCommandBuilder()
+    .setName('profile')
+    .setDescription('Ekonomi profilini göster.')
+    .addUserOption(option =>
+      option.setName('kullanıcı')
+        .setDescription('Profilini görmek istediğiniz kullanıcı')
+        .setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('leaderboard')
+    .setDescription('Zenginlik sıralamasını göster.'),
+
+  new SlashCommandBuilder()
+    .setName('invest')
+    .setDescription('Sanal borsada yatırım yap.'),
+
+  new SlashCommandBuilder()
+    .setName('gamble')
+    .setDescription('Kumar oyunları oyna.'),
+
 ].map(command => command.toJSON());
 
 // Register slash commands
@@ -177,6 +270,11 @@ client.on('interactionCreate', async (interaction) => {
               inline: false
             },
             {
+              name: '💰 **Ekonomi Sistemi**',
+              value: '• `/daily` - Günlük ödül\n• `/work` - Çalışarak para kazan\n• `/profile` - Ekonomi profili\n• `/leaderboard` - Zenginlik sıralaması\n• `/invest` - Sanal borsa\n• `/gamble` - Kumar oyunları',
+              inline: false
+            },
+            {
               name: '🎵 **Müzik**',
               value: '• *Yakında eklenecek!* 🎵\n*Müzik sistemi şu anda geliştirme aşamasındadır.*',
               inline: false
@@ -192,7 +290,7 @@ client.on('interactionCreate', async (interaction) => {
               inline: false
             }
           )
-          .setImage('https://media.discordapp.net/attachments/962353412480069652/1429871003936493579/standard_4.gif?ex=690c25e5&is=690ad465&hm=83c58d33b11f269e845ae1fbcf6f597db380e251bb02028b0b0c75677e12d403&=')
+          .setImage('https://media.discordapp.net/attachments/962353412480069652/1429871003936493579/standard_4.gif?ex=69101a65&is=690ec8e5&hm=820dcee8df2d4d512d8ceb533bfe7f788d86043d5e07d928e75792fd95505742&=')
           .setFooter({ text: `VossBlade Famq Bot | Toplam ${client.guilds.cache.size} sunucu`, iconURL: client.user.displayAvatarURL() })
           .setTimestamp();
 
@@ -370,6 +468,31 @@ client.on('interactionCreate', async (interaction) => {
         await handleReminderRemoveCommand(interaction);
       }
 
+      // EKONOMİ KOMUTLARI
+      else if (commandName === 'daily') {
+        await handleDailyCommand(interaction);
+      }
+
+      else if (commandName === 'work') {
+        await handleWorkCommand(interaction);
+      }
+
+      else if (commandName === 'profile') {
+        await handleProfileCommand(interaction);
+      }
+
+      else if (commandName === 'leaderboard') {
+        await handleLeaderboardCommand(interaction);
+      }
+
+      else if (commandName === 'invest') {
+        await handleInvestCommand(interaction);
+      }
+
+      else if (commandName === 'gamble') {
+        await handleGambleCommand(interaction);
+      }
+
     } catch (error) {
       console.error(`Command error (${commandName}):`, error);
       
@@ -385,11 +508,448 @@ client.on('interactionCreate', async (interaction) => {
   } else if (interaction.isStringSelectMenu()) {
     if (interaction.customId === 'reminderRemoveSelect') {
       await handleReminderRemoveSelect(interaction);
+    } else if (interaction.customId === 'jobSelect') {
+      await handleJobSelect(interaction);
+    } else if (interaction.customId === 'stockSelect') {
+      await handleStockSelect(interaction);
+    }
+  } else if (interaction.isButton()) {
+    if (interaction.customId === 'daily_claim') {
+      await handleDailyClaim(interaction);
+    } else if (interaction.customId.startsWith('gamble_')) {
+      await handleGambleButton(interaction);
     }
   }
 });
 
-// STATUS KOMUTU FONKSİYONU
+// EKONOMİ SİSTEMİ FONKSİYONLARI
+
+async function handleDailyCommand(interaction) {
+  const userData = initializeUserEconomy(interaction.user.id);
+  const now = Date.now();
+  const lastDaily = userData.lastDaily || 0;
+  const cooldown = 24 * 60 * 60 * 1000; // 24 saat
+
+  if (now - lastDaily < cooldown) {
+    const nextDaily = lastDaily + cooldown;
+    const timeLeft = nextDaily - now;
+    const hours = Math.floor(timeLeft / (1000 * 60 * 60));
+    const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+
+    return await interaction.reply({
+      content: `❌ Günlük ödülünü zaten aldın! ${hours} saat ${minutes} dakika sonra tekrar alabilirsin.`,
+      ephemeral: true
+    });
+  }
+
+  // Mini oyun için butonlar
+  const row = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('daily_claim')
+        .setLabel('🎁 Ödülü Al!')
+        .setStyle(ButtonStyle.Success)
+    );
+
+  const dailyEmbed = new EmbedBuilder()
+    .setTitle('🎁 Günlük Ödül')
+    .setDescription('Aşağıdaki butona tıklayarak günlük ödülünü alabilirsin!')
+    .setColor(0xFFD700)
+    .addFields(
+      { name: '🎯 Mevcut Streak', value: `${userData.dailyStreak} gün`, inline: true },
+      { name: '💰 Bonus', value: `+${userData.dailyStreak * 50} coin`, inline: true }
+    )
+    .setFooter({ text: 'Her gün ödül alarak streak\'ini artır!', iconURL: interaction.user.displayAvatarURL() });
+
+  await interaction.reply({ embeds: [dailyEmbed], components: [row] });
+}
+
+async function handleDailyClaim(interaction) {
+  const userData = initializeUserEconomy(interaction.user.id);
+  const baseReward = 500;
+  const streakBonus = userData.dailyStreak * 50;
+  const totalReward = baseReward + streakBonus;
+
+  userData.balance += totalReward;
+  userData.dailyStreak += 1;
+  userData.lastDaily = Date.now();
+  
+  // Başarı kontrolü
+  if (userData.dailyStreak === 7 && !userData.achievements.includes('daily_streak_7')) {
+    userData.achievements.push('daily_streak_7');
+    userData.balance += achievements.daily_streak_7.reward;
+  }
+
+  const resultEmbed = new EmbedBuilder()
+    .setTitle('🎉 Günlük Ödül Alındı!')
+    .setColor(0x00FF00)
+    .addFields(
+      { name: '💰 Temel Ödül', value: `${baseReward} coin`, inline: true },
+      { name: '🔥 Streak Bonus', value: `${streakBonus} coin`, inline: true },
+      { name: '🎯 Toplam', value: `${totalReward} coin`, inline: true },
+      { name: '📈 Yeni Streak', value: `${userData.dailyStreak} gün`, inline: true },
+      { name: '💳 Yeni Bakiye', value: `${userData.balance} coin`, inline: true }
+    );
+
+  if (userData.dailyStreak === 7) {
+    resultEmbed.addFields({
+      name: '🏆 Yeni Başarı!',
+      value: `**${achievements.daily_streak_7.name}** kazandın! +${achievements.daily_streak_7.reward} coin`
+    });
+  }
+
+  await interaction.update({ embeds: [resultEmbed], components: [] });
+}
+
+async function handleWorkCommand(interaction) {
+  const userData = initializeUserEconomy(interaction.user.id);
+  const now = Date.now();
+
+  if (!userData.job) {
+    // İş seçme menüsü
+    const selectMenu = new ActionRowBuilder()
+      .addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('jobSelect')
+          .setPlaceholder('Bir meslek seçin...')
+          .addOptions(
+            Object.entries(jobs).map(([jobName, jobData]) => ({
+              label: jobName,
+              description: `Kazanç: ${jobData.min}-${jobData.max} coin`,
+              value: jobName
+            }))
+          )
+      );
+
+    await interaction.reply({
+      content: '**Çalışmak için bir meslek seç:**',
+      components: [selectMenu],
+      ephemeral: true
+    });
+    return;
+  }
+
+  const job = jobs[userData.job];
+  if (now - userData.lastWork < job.cooldown) {
+    const timeLeft = job.cooldown - (now - userData.lastWork);
+    const minutes = Math.floor(timeLeft / 60000);
+    const seconds = Math.floor((timeLeft % 60000) / 1000);
+
+    return await interaction.reply({
+      content: `❌ Şu anda çalışamazsın! ${minutes} dakika ${seconds} saniye sonra tekrar çalışabilirsin.`,
+      ephemeral: true
+    });
+  }
+
+  const earnings = Math.floor(Math.random() * (job.max - job.min + 1)) + job.min;
+  const xpGain = Math.floor(earnings / 10);
+
+  userData.balance += earnings;
+  userData.xp += xpGain;
+  userData.lastWork = now;
+
+  // Seviye atlama kontrolü
+  const neededXP = userData.level * 100;
+  if (userData.xp >= neededXP) {
+    userData.level += 1;
+    userData.xp = 0;
+    userData.balance += userData.level * 200; // Seviye bonusu
+  }
+
+  const workEmbed = new EmbedBuilder()
+    .setTitle('💼 Çalışma Tamamlandı!')
+    .setColor(0x0099FF)
+    .addFields(
+      { name: '👨‍💼 Meslek', value: userData.job, inline: true },
+      { name: '💰 Kazanç', value: `${earnings} coin`, inline: true },
+      { name: '⭐ XP', value: `${xpGain} XP`, inline: true },
+      { name: '🎯 Seviye', value: `${userData.level}`, inline: true },
+      { name: '💳 Yeni Bakiye', value: `${userData.balance} coin`, inline: true },
+      { name: '📊 XP İlerleme', value: `${userData.xp}/${userData.level * 100}`, inline: true }
+    );
+
+  if (userData.xp === 0) {
+    workEmbed.addFields({
+      name: '🎉 Seviye Atladın!',
+      value: `**Seviye ${userData.level}** oldun! +${userData.level * 200} coin bonus!`
+    });
+  }
+
+  await interaction.reply({ embeds: [workEmbed] });
+}
+
+async function handleJobSelect(interaction) {
+  const userData = initializeUserEconomy(interaction.user.id);
+  const selectedJob = interaction.values[0];
+
+  userData.job = selectedJob;
+  userData.lastWork = 0; // Hemen çalışabilmesi için
+
+  const jobEmbed = new EmbedBuilder()
+    .setTitle('👨‍💼 İşe Başladın!')
+    .setColor(0x00FF00)
+    .setDescription(`Tebrikler! Artık bir **${selectedJob}** olarak çalışıyorsun.`)
+    .addFields(
+      { name: '💰 Maaş Aralığı', value: `${jobs[selectedJob].min}-${jobs[selectedJob].max} coin`, inline: true },
+      { name: '⏰ Bekleme Süresi', value: `${jobs[selectedJob].cooldown / 60000} dakika`, inline: true }
+    )
+    .setFooter({ text: 'Hemen /work komutuyla çalışmaya başlayabilirsin!', iconURL: interaction.user.displayAvatarURL() });
+
+  await interaction.update({ content: '', embeds: [jobEmbed], components: [] });
+}
+
+async function handleProfileCommand(interaction) {
+  const targetUser = interaction.options.getUser('kullanıcı') || interaction.user;
+  const userData = initializeUserEconomy(targetUser.id);
+
+  const netWorth = userData.balance + userData.bank;
+  let rank = 1;
+  
+  // Sıralama hesapla
+  const allUsers = Array.from(userEconomy.entries())
+    .map(([id, data]) => ({ id, netWorth: data.balance + data.bank }))
+    .sort((a, b) => b.netWorth - a.netWorth);
+  
+  rank = allUsers.findIndex(u => u.id === targetUser.id) + 1;
+
+  const profileEmbed = new EmbedBuilder()
+    .setTitle(`👤 ${targetUser.username} - Ekonomi Profili`)
+    .setColor(0x00AE86)
+    .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+    .addFields(
+      { name: '💳 Cüzdan', value: `${userData.balance} coin`, inline: true },
+      { name: '🏦 Banka', value: `${userData.bank} coin`, inline: true },
+      { name: '💰 Toplam', value: `${netWorth} coin`, inline: true },
+      { name: '🎯 Seviye', value: `${userData.level}`, inline: true },
+      { name: '⭐ XP', value: `${userData.xp}/${userData.level * 100}`, inline: true },
+      { name: '🏆 Sıralama', value: `#${rank}`, inline: true },
+      { name: '👨‍💼 Meslek', value: userData.job || 'İşsiz', inline: true },
+      { name: '🔥 Daily Streak', value: `${userData.dailyStreak} gün`, inline: true },
+      { name: '🏆 Başarılar', value: `${userData.achievements.length} adet`, inline: true }
+    )
+    .setFooter({ text: 'FamqVerse Ekonomi Sistemi', iconURL: client.user.displayAvatarURL() })
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [profileEmbed] });
+}
+
+async function handleLeaderboardCommand(interaction) {
+  const allUsers = Array.from(userEconomy.entries())
+    .map(([id, data]) => ({ 
+      id, 
+      netWorth: data.balance + data.bank,
+      level: data.level 
+    }))
+    .sort((a, b) => b.netWorth - a.netWorth)
+    .slice(0, 10);
+
+  let leaderboardText = '';
+  for (let i = 0; i < allUsers.length; i++) {
+    const user = allUsers[i];
+    const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+    const username = member ? member.user.username : 'Bilinmeyen Kullanıcı';
+    
+    leaderboardText += `**${i + 1}.** ${username} - ${user.netWorth} coin (Seviye ${user.level})\n`;
+  }
+
+  const leaderboardEmbed = new EmbedBuilder()
+    .setTitle('🏆 Zenginlik Sıralaması')
+    .setDescription(leaderboardText || 'Henüz kimse ekonomi sistemine katılmamış!')
+    .setColor(0xFFD700)
+    .setFooter({ text: 'FamqVerse Ekonomi Liderliği', iconURL: interaction.guild.iconURL() })
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [leaderboardEmbed] });
+}
+
+async function handleInvestCommand(interaction) {
+  const userData = initializeUserEconomy(interaction.user.id);
+  
+  const stockOptions = Object.entries(virtualStocks).map(([name, data]) => ({
+    label: name,
+    description: `Fiyat: ${data.price} coin | Değişim: %${(data.volatility * 100).toFixed(1)}`,
+    value: name
+  }));
+
+  const selectMenu = new ActionRowBuilder()
+    .addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('stockSelect')
+        .setPlaceholder('Yatırım yapmak için hisse seçin...')
+        .addOptions(stockOptions)
+    );
+
+  const investEmbed = new EmbedBuilder()
+    .setTitle('📈 Sanal Borsa')
+    .setDescription('Aşağıdan yatırım yapmak istediğiniz hisseyi seçin:')
+    .setColor(0x0099FF)
+    .addFields(
+      { name: '💳 Mevcut Bakiye', value: `${userData.balance} coin`, inline: true },
+      { name: '🏦 Toplam Yatırım', value: `${Object.values(userData.investments).reduce((sum, inv) => sum + (inv.shares * inv.buyPrice), 0)} coin`, inline: true }
+    )
+    .setFooter({ text: 'Hisse fiyatları gerçek zamanlı olarak değişmektedir', iconURL: interaction.user.displayAvatarURL() });
+
+  await interaction.reply({ embeds: [investEmbed], components: [selectMenu], ephemeral: true });
+}
+
+async function handleStockSelect(interaction) {
+  const stockName = interaction.values[0];
+  const stock = virtualStocks[stockName];
+  const userData = initializeUserEconomy(interaction.user.id);
+
+  // Basit yatırım sistemi - her seferinde 1 hisse
+  const sharesToBuy = 1;
+  const totalCost = sharesToBuy * stock.price;
+
+  if (userData.balance < totalCost) {
+    return await interaction.reply({
+      content: `❌ Yeterli bakiyen yok! ${totalCost} coin gerekiyor, senin bakiyen: ${userData.balance} coin`,
+      ephemeral: true
+    });
+  }
+
+  if (!userData.investments[stockName]) {
+    userData.investments[stockName] = { shares: 0, buyPrice: 0 };
+  }
+
+  userData.investments[stockName].shares += sharesToBuy;
+  userData.investments[stockName].buyPrice = stock.price;
+  userData.balance -= totalCost;
+
+  const investEmbed = new EmbedBuilder()
+    .setTitle('✅ Yatırım Tamamlandı!')
+    .setColor(0x00FF00)
+    .addFields(
+      { name: '📈 Hisse', value: stockName, inline: true },
+      { name: '🔢 Adet', value: `${sharesToBuy} hisse`, inline: true },
+      { name: '💰 Birim Fiyat', value: `${stock.price} coin`, inline: true },
+      { name: '💸 Toplam Maliyet', value: `${totalCost} coin`, inline: true },
+      { name: '💳 Kalan Bakiye', value: `${userData.balance} coin`, inline: true },
+      { name: '📊 Toplam Hisse', value: `${userData.investments[stockName].shares} adet`, inline: true }
+    )
+    .setFooter({ text: 'Fiyatlar dalgalanabilir, dikkatli yatırım yapın!', iconURL: interaction.user.displayAvatarURL() });
+
+  await interaction.update({ embeds: [investEmbed], components: [] });
+}
+
+async function handleGambleCommand(interaction) {
+  const row = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('gamble_slot')
+        .setLabel('🎰 Slot Makinesi')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('gamble_dice')
+        .setLabel('🎲 Zar At')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('gamble_coin')
+        .setLabel('⭕️ Yazı-Tura')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+  const gambleEmbed = new EmbedBuilder()
+    .setTitle('🎰 Kumar Oyunları')
+    .setDescription('Aşağıdan oynamak istediğiniz oyunu seçin:')
+    .setColor(0x9B59B6)
+    .addFields(
+      { name: '🎰 Slot Makinesi', value: 'Büyük kazançlar için!', inline: true },
+      { name: '🎲 Zar At', value: 'Basit ve eğlenceli', inline: true },
+      { name: '⭕️ Yazı-Tura', value: '%50 şans', inline: true }
+    )
+    .setFooter({ text: 'Kumar bağımlılık yapabilir, dikkatli oynayın!', iconURL: interaction.user.displayAvatarURL() });
+
+  await interaction.reply({ embeds: [gambleEmbed], components: [row], ephemeral: true });
+}
+
+async function handleGambleButton(interaction) {
+  const userData = initializeUserEconomy(interaction.user.id);
+  const gameType = interaction.customId.split('_')[1];
+  const betAmount = 100; // Sabit bahis
+
+  if (userData.balance < betAmount) {
+    return await interaction.reply({
+      content: `❌ Yeterli bakiyen yok! ${betAmount} coin gerekiyor, senin bakiyen: ${userData.balance} coin`,
+      ephemeral: true
+    });
+  }
+
+  userData.balance -= betAmount;
+  let result, winAmount = 0;
+
+  switch (gameType) {
+    case 'slot':
+      const slots = ['🍒', '🍋', '🍊', '⭐', '7️⃣'];
+      const result1 = slots[Math.floor(Math.random() * slots.length)];
+      const result2 = slots[Math.floor(Math.random() * slots.length)];
+      const result3 = slots[Math.floor(Math.random() * slots.length)];
+      
+      result = `${result1} | ${result2} | ${result3}`;
+      
+      if (result1 === result2 && result2 === result3) {
+        if (result1 === '7️⃣') {
+          winAmount = betAmount * 10; // Jackpot!
+        } else if (result1 === '⭐') {
+          winAmount = betAmount * 5;
+        } else {
+          winAmount = betAmount * 3;
+        }
+      } else if (result1 === result2 || result2 === result3 || result1 === result3) {
+        winAmount = betAmount * 2;
+      }
+      break;
+
+    case 'dice':
+      const userRoll = Math.floor(Math.random() * 6) + 1;
+      const botRoll = Math.floor(Math.random() * 6) + 1;
+      
+      result = `Sen: ${userRoll} | Bot: ${botRoll}`;
+      
+      if (userRoll > botRoll) {
+        winAmount = betAmount * 2;
+      } else if (userRoll === botRoll) {
+        winAmount = betAmount; // Berabere
+      }
+      break;
+
+    case 'coin':
+      const coinResult = Math.random() > 0.5 ? 'Yazı' : 'Tura';
+      const userChoice = Math.random() > 0.5 ? 'Yazı' : 'Tura';
+      
+      result = `Sen: ${userChoice} | Sonuç: ${coinResult}`;
+      
+      if (userChoice === coinResult) {
+        winAmount = betAmount * 1.8;
+      }
+      break;
+  }
+
+  userData.balance += winAmount;
+
+  const gambleResultEmbed = new EmbedBuilder()
+    .setTitle(`🎰 ${gameType === 'slot' ? 'Slot Makinesi' : gameType === 'dice' ? 'Zar Oyunu' : 'Yazı-Tura'}`)
+    .setColor(winAmount > 0 ? 0x00FF00 : 0xFF0000)
+    .addFields(
+      { name: '🎯 Sonuç', value: result, inline: false },
+      { name: '💰 Bahis', value: `${betAmount} coin`, inline: true },
+      { name: '🎉 Kazanç', value: `${winAmount} coin`, inline: true },
+      { name: '💳 Yeni Bakiye', value: `${userData.balance} coin`, inline: true }
+    );
+
+  if (winAmount > 0) {
+    gambleResultEmbed.setDescription('🎉 **Tebrikler, kazandın!**');
+  } else {
+    gambleResultEmbed.setDescription('😔 **Maalesef kaybettin, bir dahaki sefere!**');
+  }
+
+  await interaction.update({ embeds: [gambleResultEmbed], components: [] });
+}
+
+// DİĞER FONKSİYONLAR (STATUS, REMINDER vb.) AYNI KALACAK
+// Burada sadece ekonomi fonksiyonlarını gösterdim, diğer fonksiyonlar önceki mesajlardaki gibi olacak
+
+// STATUS KOMUTU
 async function handleStatusCommand(interaction) {
   try {
     const serverCount = client.guilds.cache.size;
@@ -410,6 +970,10 @@ async function handleStatusCommand(interaction) {
     const usedMemory = process.memoryUsage().rss / 1024 / 1024;
     const totalMemory = require('os').totalmem() / 1024 / 1024;
 
+    // Ekonomi istatistikleri
+    const economyUsers = userEconomy.size;
+    const totalEconomyBalance = Array.from(userEconomy.values()).reduce((sum, user) => sum + user.balance, 0);
+
     const statusEmbed = new EmbedBuilder()
       .setTitle(`🤖 ${client.user.username} Durumu`)
       .setColor(0x00AE86)
@@ -418,6 +982,11 @@ async function handleStatusCommand(interaction) {
         {
           name: '📊 **Sunucu İstatistikleri**',
           value: `┣ Sunucu Sayısı: **${serverCount}**\n┗ Toplam Kullanıcı: **${totalMembers.toLocaleString()}**`,
+          inline: false
+        },
+        {
+          name: '💰 **Ekonomi Sistemi**',
+          value: `┣ Aktif Kullanıcı: **${economyUsers}**\n┗ Toplam Para: **${totalEconomyBalance.toLocaleString()} coin**`,
           inline: false
         },
         {
