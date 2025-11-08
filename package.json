@@ -1,7 +1,7 @@
 {
   "name": "vossblade-bot",
-  "version": "1.0.0",
-  "description": "VossBlade Famq Discord Bot",
+  "version": "3.0.0",
+  "description": "VossBlade Famq Discord Bot with Virtual Economy",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
