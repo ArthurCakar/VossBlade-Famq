@@ -247,6 +247,20 @@ const commands = [
         .setRequired(true)
         .setMinValue(1)),
 
+  // YENİ KOMUT: REMOVE-COIN
+  new SlashCommandBuilder()
+    .setName('remove-coin')
+    .setDescription('Belirtilen kullanıcıdan coin çıkarır. (Sadece Bot Sahibi)')
+    .addUserOption(option =>
+      option.setName('kullanıcı')
+        .setDescription('Coin çıkarmak istediğiniz kullanıcı')
+        .setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('miktar')
+        .setDescription('Çıkarılacak coin miktarı')
+        .setRequired(true)
+        .setMinValue(1)),
+
   // YENİ KOMUT: PAY
   new SlashCommandBuilder()
     .setName('pay')
@@ -260,6 +274,20 @@ const commands = [
         .setDescription('Göndermek istediğiniz coin miktarı')
         .setRequired(true)
         .setMinValue(1)),
+
+  // YENİ KOMUT: VS
+  new SlashCommandBuilder()
+    .setName('vs')
+    .setDescription('Başka bir kullanıcıyla coin üzerine düello yap!')
+    .addUserOption(option =>
+      option.setName('rakip')
+        .setDescription('Düello yapmak istediğiniz kullanıcı')
+        .setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('bahis')
+        .setDescription('Bahis miktarı')
+        .setRequired(true)
+        .setMinValue(10)),
 
 ].map(command => command.toJSON());
 
@@ -300,7 +328,7 @@ client.on('interactionCreate', async (interaction) => {
             },
             {
               name: '💰 **Ekonomi Sistemi**',
-              value: '• `/daily` - Günlük ödül\n• `/work` - Çalışarak para kazan\n• `/profile` - Ekonomi profili\n• `/leaderboard` - Zenginlik sıralaması\n• `/invest` - Sanal borsa\n• `/gamble` - Kumar oyunları\n• `/pay` - Başka kullanıcıya coin gönder\n• `/add-coin` - Coin ekleme (Sadece Bot Sahibi)',
+              value: '• `/daily` - Günlük ödül\n• `/work` - Çalışarak para kazan\n• `/profile` - Ekonomi profili\n• `/leaderboard` - Zenginlik sıralaması\n• `/invest` - Sanal borsa\n• `/gamble` - Kumar oyunları\n• `/pay` - Başka kullanıcıya coin gönder\n• `/add-coin` - Coin ekleme (Sadece Bot Sahibi)\n• `/remove-coin` - Coin çıkarma (Sadece Bot Sahibi)\n• `/vs` - Bahisli düello',
               inline: false
             },
             {
@@ -527,9 +555,19 @@ client.on('interactionCreate', async (interaction) => {
         await handleAddCoinCommand(interaction);
       }
 
+      // YENİ KOMUT: REMOVE-COIN
+      else if (commandName === 'remove-coin') {
+        await handleRemoveCoinCommand(interaction);
+      }
+
       // YENİ KOMUT: PAY
       else if (commandName === 'pay') {
         await handlePayCommand(interaction);
+      }
+
+      // YENİ KOMUT: VS
+      else if (commandName === 'vs') {
+        await handleVsCommand(interaction);
       }
 
     } catch (error) {
@@ -557,6 +595,8 @@ client.on('interactionCreate', async (interaction) => {
       await handleDailyClaim(interaction);
     } else if (interaction.customId.startsWith('gamble_')) {
       await handleGambleButton(interaction);
+    } else if (interaction.customId.startsWith('vs_')) {
+      await handleVsButton(interaction);
     }
   }
 });
@@ -966,6 +1006,40 @@ async function handleAddCoinCommand(interaction) {
   await interaction.reply({ embeds: [addCoinEmbed] });
 }
 
+// YENİ REMOVE-COIN KOMUTU
+async function handleRemoveCoinCommand(interaction) {
+  // Sadece bot sahibi kullanabilsin
+  if (interaction.user.id !== '726500417021804648') {
+    return await interaction.reply({
+      content: '❌ Bu komutu sadece bot sahibi kullanabilir!',
+      ephemeral: true
+    });
+  }
+
+  const targetUser = interaction.options.getUser('kullanıcı');
+  const amount = interaction.options.getInteger('miktar');
+  const userData = initializeUserEconomy(targetUser.id);
+
+  // Kullanıcının bakiyesinden çıkar
+  userData.balance = Math.max(0, userData.balance - amount); // Negatif olmaması için
+
+  const removeCoinEmbed = new EmbedBuilder()
+    .setTitle('💰 Coin Çıkarıldı!')
+    .setColor(0xFF0000)
+    .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+    .addFields(
+      { name: '👤 Kullanıcı', value: `${targetUser.tag}`, inline: true },
+      { name: '🆔 ID', value: targetUser.id, inline: true },
+      { name: '💰 Çıkarılan Miktar', value: `${amount.toLocaleString()} coin`, inline: true },
+      { name: '💳 Yeni Bakiye', value: `${userData.balance.toLocaleString()} coin`, inline: true },
+      { name: '👤 İşlemi Yapan', value: interaction.user.tag, inline: true }
+    )
+    .setFooter({ text: 'FamqVerse Yönetici Sistemi', iconURL: interaction.user.displayAvatarURL() })
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [removeCoinEmbed] });
+}
+
 // YENİ PAY KOMUTU
 async function handlePayCommand(interaction) {
   const targetUser = interaction.options.getUser('kullanıcı');
@@ -1008,6 +1082,233 @@ async function handlePayCommand(interaction) {
     .setTimestamp();
 
   await interaction.reply({ embeds: [payEmbed] });
+}
+
+// YENİ VS KOMUTU
+async function handleVsCommand(interaction) {
+  const challenger = interaction.user;
+  const opponent = interaction.options.getUser('rakip');
+  const betAmount = interaction.options.getInteger('bahis');
+
+  // Kontroller
+  if (opponent.bot) {
+    return await interaction.reply({
+      content: '❌ Botlarla VS atamazsın!',
+      ephemeral: true
+    });
+  }
+
+  if (opponent.id === challenger.id) {
+    return await interaction.reply({
+      content: '❌ Kendinle VS atamazsın!',
+      ephemeral: true
+    });
+  }
+
+  const challengerData = initializeUserEconomy(challenger.id);
+  const opponentData = initializeUserEconomy(opponent.id);
+
+  if (challengerData.balance < betAmount) {
+    return await interaction.reply({
+      content: `❌ Yeterli bakiyen yok! ${betAmount} coin gerekiyor, senin bakiyen: ${challengerData.balance} coin`,
+      ephemeral: true
+    });
+  }
+
+  if (opponentData.balance < betAmount) {
+    return await interaction.reply({
+      content: `❌ Rakibin yeterli bakiyesi yok! ${opponent.username}'in bakiyesi: ${opponentData.balance} coin`,
+      ephemeral: true
+    });
+  }
+
+  // VS daveti oluştur
+  const vsEmbed = new EmbedBuilder()
+    .setTitle('⚔️ VS Düello Daveti!')
+    .setColor(0xFF0000)
+    .setDescription(`${challenger} ${opponent} adlı kullanıcıyı **${betAmount.toLocaleString()} coin** bahisli düelloya çağırıyor!`)
+    .addFields(
+      { name: '🎯 Meydan Okuyan', value: `${challenger.tag}\nBakiye: ${challengerData.balance} coin`, inline: true },
+      { name: '🛡️ Rakip', value: `${opponent.tag}\nBakiye: ${opponentData.balance} coin`, inline: true },
+      { name: '💰 Bahis', value: `${betAmount.toLocaleString()} coin`, inline: true }
+    )
+    .setImage('https://media.discordapp.net/attachments/962353412480069652/1430000000000000000/vs_battle.gif')
+    .setFooter({ text: 'Düelloyu kabul etmek için 60 saniyen var!', iconURL: interaction.guild.iconURL() })
+    .setTimestamp();
+
+  const row = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId(`vs_accept_${challenger.id}_${opponent.id}_${betAmount}`)
+        .setLabel('⚔️ Düelloyu Kabul Et!')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`vs_decline_${challenger.id}_${opponent.id}_${betAmount}`)
+        .setLabel('❌ Reddet')
+        .setStyle(ButtonStyle.Danger)
+    );
+
+  await interaction.reply({ 
+    content: `${opponent}`, 
+    embeds: [vsEmbed], 
+    components: [row] 
+  });
+
+  // 60 saniye timeout
+  setTimeout(async () => {
+    try {
+      const message = await interaction.fetchReply();
+      if (message.components.length > 0) {
+        const timeoutEmbed = new EmbedBuilder()
+          .setTitle('⏰ VS Düello Süresi Doldu!')
+          .setColor(0x666666)
+          .setDescription('Düello daveti süresi doldu.')
+          .setFooter({ text: 'Davet 60 saniye içinde kabul edilmedi', iconURL: interaction.guild.iconURL() });
+
+        await interaction.editReply({ 
+          content: '', 
+          embeds: [timeoutEmbed], 
+          components: [] 
+        });
+      }
+    } catch (error) {
+      console.error('VS timeout hatası:', error);
+    }
+  }, 60000);
+}
+
+// YENİ VS BUTON İŞLEYİCİSİ
+async function handleVsButton(interaction) {
+  const [action, challengerId, opponentId, betAmount] = interaction.customId.split('_').slice(1);
+  const bet = parseInt(betAmount);
+
+  if (action === 'decline') {
+    const declineEmbed = new EmbedBuilder()
+      .setTitle('❌ VS Düello Reddedildi!')
+      .setColor(0x666666)
+      .setDescription(`${interaction.user} düello davetini reddetti.`)
+      .setFooter({ text: 'Başka zaman tekrar deneyin!', iconURL: interaction.guild.iconURL() });
+
+    await interaction.update({ 
+      content: '', 
+      embeds: [declineEmbed], 
+      components: [] 
+    });
+    return;
+  }
+
+  if (action === 'accept') {
+    const challenger = await client.users.fetch(challengerId);
+    const opponent = interaction.user;
+
+    // Tekrar bakiye kontrolü
+    const challengerData = initializeUserEconomy(challenger.id);
+    const opponentData = initializeUserEconomy(opponent.id);
+
+    if (challengerData.balance < bet || opponentData.balance < bet) {
+      const errorEmbed = new EmbedBuilder()
+        .setTitle('❌ VS Düello İptal!')
+        .setColor(0xFF0000)
+        .setDescription('Bir oyuncunun yeterli bakiyesi kalmadı!')
+        .addFields(
+          { name: `${challenger.username}`, value: `${challengerData.balance} coin`, inline: true },
+          { name: `${opponent.username}`, value: `${opponentData.balance} coin`, inline: true }
+        );
+
+      await interaction.update({ 
+        content: '', 
+        embeds: [errorEmbed], 
+        components: [] 
+      });
+      return;
+    }
+
+    // Düello başlıyor!
+    const battleEmbed = new EmbedBuilder()
+      .setTitle('⚔️ VS Düello Başlıyor!')
+      .setColor(0xFF0000)
+      .setDescription('Düello 3 saniye içinde başlayacak... ⚡')
+      .addFields(
+        { name: '🎯 Meydan Okuyan', value: challenger.username, inline: true },
+        { name: '🛡️ Rakip', value: opponent.username, inline: true },
+        { name: '💰 Bahis', value: `${bet.toLocaleString()} coin`, inline: true }
+      )
+      .setImage('https://media.discordapp.net/attachments/962353412480069652/1430000000000000001/battle_start.gif')
+      .setFooter({ text: 'Hazır olun!', iconURL: interaction.guild.iconURL() });
+
+    await interaction.update({ 
+      content: `${challenger} ${opponent}`, 
+      embeds: [battleEmbed], 
+      components: [] 
+    });
+
+    // 3 saniye bekle
+    setTimeout(async () => {
+      await startVsBattle(interaction, challenger, opponent, bet);
+    }, 3000);
+  }
+}
+
+// YENİ VS SAVAŞ FONKSİYONU
+async function startVsBattle(originalInteraction, challenger, opponent, betAmount) {
+  try {
+    // Rastgele kazanan belirle (%50 şans)
+    const winner = Math.random() > 0.5 ? challenger : opponent;
+    const loser = winner.id === challenger.id ? opponent : challenger;
+
+    // Coin transferi
+    const winnerData = initializeUserEconomy(winner.id);
+    const loserData = initializeUserEconomy(loser.id);
+
+    winnerData.balance += betAmount;
+    loserData.balance -= betAmount;
+
+    // Kazanç/kayıp hesapla
+    const winnerOldBalance = winnerData.balance - betAmount;
+    const loserOldBalance = loserData.balance + betAmount;
+
+    // Savaş animasyonu için rastgele canlar
+    const challengerHP = Math.floor(Math.random() * 50) + 50;
+    const opponentHP = Math.floor(Math.random() * 50) + 50;
+    
+    const winnerHP = winner.id === challenger.id ? challengerHP : opponentHP;
+    const loserHP = winner.id === challenger.id ? opponentHP : challengerHP;
+
+    const resultEmbed = new EmbedBuilder()
+      .setTitle('🎉 VS Düello Sonucu!')
+      .setColor(winner.id === challenger.id ? 0x00FF00 : 0x0099FF)
+      .setDescription(`**${winner.username}** düelloyu kazandı! 🏆`)
+      .addFields(
+        { name: '⚔️ Kazanan', value: `${winner.username}\n+${betAmount.toLocaleString()} coin`, inline: true },
+        { name: '💀 Kaybeden', value: `${loser.username}\n-${betAmount.toLocaleString()} coin`, inline: true },
+        { name: '❤️ Can Durumu', value: `**${winner.username}:** ${winnerHP} HP\n**${loser.username}:** ${loserHP} HP`, inline: false },
+        { name: '💰 Önceki/Sonraki', value: `**${winner.username}:** ${winnerOldBalance} → ${winnerData.balance} coin\n**${loser.username}:** ${loserOldBalance} → ${loserData.balance} coin`, inline: false }
+      )
+      .setImage(winner.id === challenger.id ? 
+        'https://media.discordapp.net/attachments/962353412480069652/1430000000000000002/victory_challenger.gif' :
+        'https://media.discordapp.net/attachments/962353412480069652/1430000000000000003/victory_opponent.gif'
+      )
+      .setFooter({ text: 'Tebrikler! Tekrar düello yapmak için /vs komutunu kullanın', iconURL: winner.displayAvatarURL() })
+      .setTimestamp();
+
+    await originalInteraction.editReply({ 
+      content: `${challenger} ${opponent}`, 
+      embeds: [resultEmbed] 
+    });
+
+  } catch (error) {
+    console.error('VS battle hatası:', error);
+    const errorEmbed = new EmbedBuilder()
+      .setTitle('❌ VS Düello Hatası!')
+      .setColor(0xFF0000)
+      .setDescription('Düello sırasında bir hata oluştu!')
+      .setFooter({ text: 'Lütfen tekrar deneyin', iconURL: originalInteraction.guild.iconURL() });
+
+    await originalInteraction.editReply({ 
+      content: '', 
+      embeds: [errorEmbed] 
+    });
+  }
 }
 
 // GÜNCELLENMİŞ GAMBLE BUTON İŞLEYİCİSİ
