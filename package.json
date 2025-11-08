@@ -8,7 +8,12 @@
   },
   "dependencies": {
     "discord.js": "^14.14.1",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "@discordjs/voice": "^0.16.0",
+    "ytdl-core": "^4.11.5",
+    "libsodium-wrappers": "^0.7.13",
+    "tweetnacl": "^1.0.3",
+    "@discordjs/opus": "^0.9.0"
   },
   "engines": {
     "node": "18.x"
