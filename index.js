@@ -247,6 +247,20 @@ const commands = [
         .setRequired(true)
         .setMinValue(1)),
 
+  // YENİ KOMUT: PAY
+  new SlashCommandBuilder()
+    .setName('pay')
+    .setDescription('Başka bir kullanıcıya coin gönder.')
+    .addUserOption(option =>
+      option.setName('kullanıcı')
+        .setDescription('Coin göndermek istediğiniz kullanıcı')
+        .setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('miktar')
+        .setDescription('Göndermek istediğiniz coin miktarı')
+        .setRequired(true)
+        .setMinValue(1)),
+
 ].map(command => command.toJSON());
 
 // Register slash commands
@@ -286,7 +300,7 @@ client.on('interactionCreate', async (interaction) => {
             },
             {
               name: '💰 **Ekonomi Sistemi**',
-              value: '• `/daily` - Günlük ödül\n• `/work` - Çalışarak para kazan\n• `/profile` - Ekonomi profili\n• `/leaderboard` - Zenginlik sıralaması\n• `/invest` - Sanal borsa\n• `/gamble` - Kumar oyunları\n• `/add-coin` - Coin ekleme (Sadece Bot Sahibi)',
+              value: '• `/daily` - Günlük ödül\n• `/work` - Çalışarak para kazan\n• `/profile` - Ekonomi profili\n• `/leaderboard` - Zenginlik sıralaması\n• `/invest` - Sanal borsa\n• `/gamble` - Kumar oyunları\n• `/pay` - Başka kullanıcıya coin gönder\n• `/add-coin` - Coin ekleme (Sadece Bot Sahibi)',
               inline: false
             },
             {
@@ -511,6 +525,11 @@ client.on('interactionCreate', async (interaction) => {
       // YENİ KOMUT: ADD-COIN
       else if (commandName === 'add-coin') {
         await handleAddCoinCommand(interaction);
+      }
+
+      // YENİ KOMUT: PAY
+      else if (commandName === 'pay') {
+        await handlePayCommand(interaction);
       }
 
     } catch (error) {
@@ -782,6 +801,7 @@ async function handleLeaderboardCommand(interaction) {
   await interaction.reply({ embeds: [leaderboardEmbed] });
 }
 
+// GÜNCELLENMİŞ INVEST KOMUTU
 async function handleInvestCommand(interaction) {
   const userData = initializeUserEconomy(interaction.user.id);
   
@@ -812,44 +832,84 @@ async function handleInvestCommand(interaction) {
   await interaction.reply({ embeds: [investEmbed], components: [selectMenu], ephemeral: true });
 }
 
+// GÜNCELLENMİŞ STOCK SELECT İŞLEYİCİSİ
 async function handleStockSelect(interaction) {
   const stockName = interaction.values[0];
   const stock = virtualStocks[stockName];
-  const userData = initializeUserEconomy(interaction.user.id);
+  
+  // Modal oluştur - kaç hisse alınmak istendiğini sor
+  const modal = new ModalBuilder()
+    .setCustomId(`investModal_${stockName}`)
+    .setTitle(`${stockName} Hisse Alımı`);
 
-  // Basit yatırım sistemi - her seferinde 1 hisse
-  const sharesToBuy = 1;
-  const totalCost = sharesToBuy * stock.price;
+  const sharesInput = new TextInputBuilder()
+    .setCustomId('sharesAmount')
+    .setLabel("Almak istediğiniz hisse miktarı")
+    .setPlaceholder("1")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMinLength(1)
+    .setMaxLength(5);
 
-  if (userData.balance < totalCost) {
-    return await interaction.reply({
-      content: `❌ Yeterli bakiyen yok! ${totalCost} coin gerekiyor, senin bakiyen: ${userData.balance} coin`,
+  const actionRow = new ActionRowBuilder().addComponents(sharesInput);
+  modal.addComponents(actionRow);
+
+  await interaction.showModal(modal);
+}
+
+// YENİ INVEST MODAL İŞLEYİCİSİ
+async function handleInvestModal(interaction, stockName) {
+  try {
+    const sharesAmount = parseInt(interaction.fields.getTextInputValue('sharesAmount'));
+    const stock = virtualStocks[stockName];
+    const userData = initializeUserEconomy(interaction.user.id);
+
+    if (isNaN(sharesAmount) || sharesAmount < 1) {
+      return await interaction.reply({
+        content: '❌ Geçersiz hisse miktarı! Lütfen pozitif bir sayı girin.',
+        ephemeral: true
+      });
+    }
+
+    const totalCost = sharesAmount * stock.price;
+
+    if (userData.balance < totalCost) {
+      return await interaction.reply({
+        content: `❌ Yeterli bakiyen yok! ${totalCost} coin gerekiyor, senin bakiyen: ${userData.balance} coin`,
+        ephemeral: true
+      });
+    }
+
+    if (!userData.investments[stockName]) {
+      userData.investments[stockName] = { shares: 0, buyPrice: 0 };
+    }
+
+    userData.investments[stockName].shares += sharesAmount;
+    userData.investments[stockName].buyPrice = stock.price;
+    userData.balance -= totalCost;
+
+    const investEmbed = new EmbedBuilder()
+      .setTitle('✅ Yatırım Tamamlandı!')
+      .setColor(0x00FF00)
+      .addFields(
+        { name: '📈 Hisse', value: stockName, inline: true },
+        { name: '🔢 Adet', value: `${sharesAmount} hisse`, inline: true },
+        { name: '💰 Birim Fiyat', value: `${stock.price} coin`, inline: true },
+        { name: '💸 Toplam Maliyet', value: `${totalCost} coin`, inline: true },
+        { name: '💳 Kalan Bakiye', value: `${userData.balance} coin`, inline: true },
+        { name: '📊 Toplam Hisse', value: `${userData.investments[stockName].shares} adet`, inline: true }
+      )
+      .setFooter({ text: 'Fiyatlar dalgalanabilir, dikkatli yatırım yapın!', iconURL: interaction.user.displayAvatarURL() });
+
+    await interaction.reply({ embeds: [investEmbed] });
+
+  } catch (error) {
+    console.error('Invest modal hatası:', error);
+    await interaction.reply({
+      content: '❌ Yatırım işlemi sırasında bir hata oluştu!',
       ephemeral: true
     });
   }
-
-  if (!userData.investments[stockName]) {
-    userData.investments[stockName] = { shares: 0, buyPrice: 0 };
-  }
-
-  userData.investments[stockName].shares += sharesToBuy;
-  userData.investments[stockName].buyPrice = stock.price;
-  userData.balance -= totalCost;
-
-  const investEmbed = new EmbedBuilder()
-    .setTitle('✅ Yatırım Tamamlandı!')
-    .setColor(0x00FF00)
-    .addFields(
-      { name: '📈 Hisse', value: stockName, inline: true },
-      { name: '🔢 Adet', value: `${sharesToBuy} hisse`, inline: true },
-      { name: '💰 Birim Fiyat', value: `${stock.price} coin`, inline: true },
-      { name: '💸 Toplam Maliyet', value: `${totalCost} coin`, inline: true },
-      { name: '💳 Kalan Bakiye', value: `${userData.balance} coin`, inline: true },
-      { name: '📊 Toplam Hisse', value: `${userData.investments[stockName].shares} adet`, inline: true }
-    )
-    .setFooter({ text: 'Fiyatlar dalgalanabilir, dikkatli yatırım yapın!', iconURL: interaction.user.displayAvatarURL() });
-
-  await interaction.update({ embeds: [investEmbed], components: [] });
 }
 
 // GÜNCELLENMİŞ GAMBLE KOMUTU
@@ -904,6 +964,50 @@ async function handleAddCoinCommand(interaction) {
     .setTimestamp();
 
   await interaction.reply({ embeds: [addCoinEmbed] });
+}
+
+// YENİ PAY KOMUTU
+async function handlePayCommand(interaction) {
+  const targetUser = interaction.options.getUser('kullanıcı');
+  const amount = interaction.options.getInteger('miktar');
+  const userData = initializeUserEconomy(interaction.user.id);
+  const targetData = initializeUserEconomy(targetUser.id);
+
+  // Kendine para gönderemez
+  if (targetUser.id === interaction.user.id) {
+    return await interaction.reply({
+      content: '❌ Kendine coin gönderemezsin!',
+      ephemeral: true
+    });
+  }
+
+  // Yeterli bakiye kontrolü
+  if (userData.balance < amount) {
+    return await interaction.reply({
+      content: `❌ Yeterli bakiyen yok! ${amount} coin göndermek istiyorsun, bakiyen: ${userData.balance} coin`,
+      ephemeral: true
+    });
+  }
+
+  // Para transferi
+  userData.balance -= amount;
+  targetData.balance += amount;
+
+  const payEmbed = new EmbedBuilder()
+    .setTitle('💸 Coin Transferi')
+    .setColor(0x00FF00)
+    .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
+    .addFields(
+      { name: '👤 Gönderen', value: `${interaction.user.tag}`, inline: true },
+      { name: '👥 Alıcı', value: `${targetUser.tag}`, inline: true },
+      { name: '💰 Miktar', value: `${amount.toLocaleString()} coin`, inline: true },
+      { name: '💳 Gönderen Yeni Bakiye', value: `${userData.balance.toLocaleString()} coin`, inline: true },
+      { name: '🏦 Alıcı Yeni Bakiye', value: `${targetData.balance.toLocaleString()} coin`, inline: true }
+    )
+    .setFooter({ text: 'FamqVerse Transfer Sistemi', iconURL: client.user.displayAvatarURL() })
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [payEmbed] });
 }
 
 // GÜNCELLENMİŞ GAMBLE BUTON İŞLEYİCİSİ
@@ -1187,6 +1291,7 @@ async function handleReminderCommand(interaction) {
   await interaction.showModal(modal);
 }
 
+// GÜNCELLENMİŞ MODAL SUBMIT İŞLEYİCİSİ
 async function handleModalSubmit(interaction) {
   if (interaction.customId === 'reminderModal') {
     try {
@@ -1260,6 +1365,9 @@ async function handleModalSubmit(interaction) {
     }
   } else if (interaction.customId === 'gambleModal') {
     await handleGambleModal(interaction);
+  } else if (interaction.customId.startsWith('investModal_')) {
+    const stockName = interaction.customId.replace('investModal_', '');
+    await handleInvestModal(interaction, stockName);
   }
 }
 
