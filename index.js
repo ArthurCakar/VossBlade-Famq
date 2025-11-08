@@ -636,7 +636,7 @@ async function handleDailyCommand(interaction) {
     .setColor(0xFFD700)
     .addFields(
       { name: '🎯 Mevcut Streak', value: `${userData.dailyStreak} gün`, inline: true },
-      { name: '💰 Bonus', value: `+${userData.dailyStreak * 50} coin`, inline: true }
+      { name: '💰 Bonus', value: `+${(userData.dailyStreak * 50).toLocaleString()} coin`, inline: true }
     )
     .setFooter({ text: 'Her gün ödül alarak streak\'ini artır!', iconURL: interaction.user.displayAvatarURL() });
 
@@ -663,17 +663,17 @@ async function handleDailyClaim(interaction) {
     .setTitle('🎉 Günlük Ödül Alındı!')
     .setColor(0x00FF00)
     .addFields(
-      { name: '💰 Temel Ödül', value: `${baseReward} coin`, inline: true },
-      { name: '🔥 Streak Bonus', value: `${streakBonus} coin`, inline: true },
-      { name: '🎯 Toplam', value: `${totalReward} coin`, inline: true },
+      { name: '💰 Temel Ödül', value: `${baseReward.toLocaleString()} coin`, inline: true },
+      { name: '🔥 Streak Bonus', value: `${streakBonus.toLocaleString()} coin`, inline: true },
+      { name: '🎯 Toplam', value: `${totalReward.toLocaleString()} coin`, inline: true },
       { name: '📈 Yeni Streak', value: `${userData.dailyStreak} gün`, inline: true },
-      { name: '💳 Yeni Bakiye', value: `${userData.balance} coin`, inline: true }
+      { name: '💳 Yeni Bakiye', value: `${userData.balance.toLocaleString()} coin`, inline: true }
     );
 
   if (userData.dailyStreak === 7) {
     resultEmbed.addFields({
       name: '🏆 Yeni Başarı!',
-      value: `**${achievements.daily_streak_7.name}** kazandın! +${achievements.daily_streak_7.reward} coin`
+      value: `**${achievements.daily_streak_7.name}** kazandın! +${achievements.daily_streak_7.reward.toLocaleString()} coin`
     });
   }
 
@@ -694,7 +694,7 @@ async function handleWorkCommand(interaction) {
           .addOptions(
             Object.entries(jobs).map(([jobName, jobData]) => ({
               label: jobName,
-              description: `Kazanç: ${jobData.min}-${jobData.max} coin`,
+              description: `Kazanç: ${jobData.min.toLocaleString()}-${jobData.max.toLocaleString()} coin`,
               value: jobName
             }))
           )
@@ -740,17 +740,17 @@ async function handleWorkCommand(interaction) {
     .setColor(0x0099FF)
     .addFields(
       { name: '👨‍💼 Meslek', value: userData.job, inline: true },
-      { name: '💰 Kazanç', value: `${earnings} coin`, inline: true },
+      { name: '💰 Kazanç', value: `${earnings.toLocaleString()} coin`, inline: true },
       { name: '⭐ XP', value: `${xpGain} XP`, inline: true },
       { name: '🎯 Seviye', value: `${userData.level}`, inline: true },
-      { name: '💳 Yeni Bakiye', value: `${userData.balance} coin`, inline: true },
+      { name: '💳 Yeni Bakiye', value: `${userData.balance.toLocaleString()} coin`, inline: true },
       { name: '📊 XP İlerleme', value: `${userData.xp}/${userData.level * 100}`, inline: true }
     );
 
   if (userData.xp === 0) {
     workEmbed.addFields({
       name: '🎉 Seviye Atladın!',
-      value: `**Seviye ${userData.level}** oldun! +${userData.level * 200} coin bonus!`
+      value: `**Seviye ${userData.level}** oldun! +${(userData.level * 200).toLocaleString()} coin bonus!`
     });
   }
 
@@ -769,7 +769,7 @@ async function handleJobSelect(interaction) {
     .setColor(0x00FF00)
     .setDescription(`Tebrikler! Artık bir **${selectedJob}** olarak çalışıyorsun.`)
     .addFields(
-      { name: '💰 Maaş Aralığı', value: `${jobs[selectedJob].min}-${jobs[selectedJob].max} coin`, inline: true },
+      { name: '💰 Maaş Aralığı', value: `${jobs[selectedJob].min.toLocaleString()}-${jobs[selectedJob].max.toLocaleString()} coin`, inline: true },
       { name: '⏰ Bekleme Süresi', value: `${jobs[selectedJob].cooldown / 60000} dakika`, inline: true }
     )
     .setFooter({ text: 'Hemen /work komutuyla çalışmaya başlayabilirsin!', iconURL: interaction.user.displayAvatarURL() });
@@ -796,9 +796,9 @@ async function handleProfileCommand(interaction) {
     .setColor(0x00AE86)
     .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
     .addFields(
-      { name: '💳 Cüzdan', value: `${userData.balance} coin`, inline: true },
-      { name: '🏦 Banka', value: `${userData.bank} coin`, inline: true },
-      { name: '💰 Toplam', value: `${netWorth} coin`, inline: true },
+      { name: '💳 Cüzdan', value: `${userData.balance.toLocaleString()} coin`, inline: true },
+      { name: '🏦 Banka', value: `${userData.bank.toLocaleString()} coin`, inline: true },
+      { name: '💰 Toplam', value: `${netWorth.toLocaleString()} coin`, inline: true },
       { name: '🎯 Seviye', value: `${userData.level}`, inline: true },
       { name: '⭐ XP', value: `${userData.xp}/${userData.level * 100}`, inline: true },
       { name: '🏆 Sıralama', value: `#${rank}`, inline: true },
@@ -826,9 +826,9 @@ async function handleLeaderboardCommand(interaction) {
   for (let i = 0; i < allUsers.length; i++) {
     const user = allUsers[i];
     const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-    const username = member ? member.user.username : 'Bilinmeyen Kullanıcı';
+    const username = member ? `<@${user.id}>` : 'Bilinmeyen Kullanıcı';
     
-    leaderboardText += `**${i + 1}.** ${username} - ${user.netWorth} coin (Seviye ${user.level})\n`;
+    leaderboardText += `**${i + 1}.** ${username} - ${user.netWorth.toLocaleString()} coin (Seviye ${user.level})\n`;
   }
 
   const leaderboardEmbed = new EmbedBuilder()
@@ -847,7 +847,7 @@ async function handleInvestCommand(interaction) {
   
   const stockOptions = Object.entries(virtualStocks).map(([name, data]) => ({
     label: name,
-    description: `Fiyat: ${data.price} coin | Değişim: %${(data.volatility * 100).toFixed(1)}`,
+    description: `Fiyat: ${data.price.toLocaleString()} coin | Değişim: %${(data.volatility * 100).toFixed(1)}`,
     value: name
   }));
 
@@ -859,13 +859,15 @@ async function handleInvestCommand(interaction) {
         .addOptions(stockOptions)
     );
 
+  const totalInvestment = Object.values(userData.investments).reduce((sum, inv) => sum + (inv.shares * inv.buyPrice), 0);
+
   const investEmbed = new EmbedBuilder()
     .setTitle('📈 Sanal Borsa')
     .setDescription('Aşağıdan yatırım yapmak istediğiniz hisseyi seçin:')
     .setColor(0x0099FF)
     .addFields(
-      { name: '💳 Mevcut Bakiye', value: `${userData.balance} coin`, inline: true },
-      { name: '🏦 Toplam Yatırım', value: `${Object.values(userData.investments).reduce((sum, inv) => sum + (inv.shares * inv.buyPrice), 0)} coin`, inline: true }
+      { name: '💳 Mevcut Bakiye', value: `${userData.balance.toLocaleString()} coin`, inline: true },
+      { name: '🏦 Toplam Yatırım', value: `${totalInvestment.toLocaleString()} coin`, inline: true }
     )
     .setFooter({ text: 'Hisse fiyatları gerçek zamanlı olarak değişmektedir', iconURL: interaction.user.displayAvatarURL() });
 
@@ -915,7 +917,7 @@ async function handleInvestModal(interaction, stockName) {
 
     if (userData.balance < totalCost) {
       return await interaction.reply({
-        content: `❌ Yeterli bakiyen yok! ${totalCost} coin gerekiyor, senin bakiyen: ${userData.balance} coin`,
+        content: `❌ Yeterli bakiyen yok! ${totalCost.toLocaleString()} coin gerekiyor, senin bakiyen: ${userData.balance.toLocaleString()} coin`,
         ephemeral: true
       });
     }
@@ -933,11 +935,11 @@ async function handleInvestModal(interaction, stockName) {
       .setColor(0x00FF00)
       .addFields(
         { name: '📈 Hisse', value: stockName, inline: true },
-        { name: '🔢 Adet', value: `${sharesAmount} hisse`, inline: true },
-        { name: '💰 Birim Fiyat', value: `${stock.price} coin`, inline: true },
-        { name: '💸 Toplam Maliyet', value: `${totalCost} coin`, inline: true },
-        { name: '💳 Kalan Bakiye', value: `${userData.balance} coin`, inline: true },
-        { name: '📊 Toplam Hisse', value: `${userData.investments[stockName].shares} adet`, inline: true }
+        { name: '🔢 Adet', value: `${sharesAmount.toLocaleString()} hisse`, inline: true },
+        { name: '💰 Birim Fiyat', value: `${stock.price.toLocaleString()} coin`, inline: true },
+        { name: '💸 Toplam Maliyet', value: `${totalCost.toLocaleString()} coin`, inline: true },
+        { name: '💳 Kalan Bakiye', value: `${userData.balance.toLocaleString()} coin`, inline: true },
+        { name: '📊 Toplam Hisse', value: `${userData.investments[stockName].shares.toLocaleString()} adet`, inline: true }
       )
       .setFooter({ text: 'Fiyatlar dalgalanabilir, dikkatli yatırım yapın!', iconURL: interaction.user.displayAvatarURL() });
 
@@ -1058,7 +1060,7 @@ async function handlePayCommand(interaction) {
   // Yeterli bakiye kontrolü
   if (userData.balance < amount) {
     return await interaction.reply({
-      content: `❌ Yeterli bakiyen yok! ${amount} coin göndermek istiyorsun, bakiyen: ${userData.balance} coin`,
+      content: `❌ Yeterli bakiyen yok! ${amount.toLocaleString()} coin göndermek istiyorsun, bakiyen: ${userData.balance.toLocaleString()} coin`,
       ephemeral: true
     });
   }
@@ -1110,14 +1112,14 @@ async function handleVsCommand(interaction) {
 
   if (challengerData.balance < betAmount) {
     return await interaction.reply({
-      content: `❌ Yeterli bakiyen yok! ${betAmount} coin gerekiyor, senin bakiyen: ${challengerData.balance} coin`,
+      content: `❌ Yeterli bakiyen yok! ${betAmount.toLocaleString()} coin gerekiyor, senin bakiyen: ${challengerData.balance.toLocaleString()} coin`,
       ephemeral: true
     });
   }
 
   if (opponentData.balance < betAmount) {
     return await interaction.reply({
-      content: `❌ Rakibin yeterli bakiyesi yok! ${opponent.username}'in bakiyesi: ${opponentData.balance} coin`,
+      content: `❌ Rakibin yeterli bakiyesi yok! ${opponent.username}'in bakiyesi: ${opponentData.balance.toLocaleString()} coin`,
       ephemeral: true
     });
   }
@@ -1128,8 +1130,8 @@ async function handleVsCommand(interaction) {
     .setColor(0xFF0000)
     .setDescription(`${challenger} ${opponent} adlı kullanıcıyı **${betAmount.toLocaleString()} coin** bahisli düelloya çağırıyor!`)
     .addFields(
-      { name: '🎯 Meydan Okuyan', value: `${challenger.tag}\nBakiye: ${challengerData.balance} coin`, inline: true },
-      { name: '🛡️ Rakip', value: `${opponent.tag}\nBakiye: ${opponentData.balance} coin`, inline: true },
+      { name: '🎯 Meydan Okuyan', value: `${challenger.tag}\nBakiye: ${challengerData.balance.toLocaleString()} coin`, inline: true },
+      { name: '🛡️ Rakip', value: `${opponent.tag}\nBakiye: ${opponentData.balance.toLocaleString()} coin`, inline: true },
       { name: '💰 Bahis', value: `${betAmount.toLocaleString()} coin`, inline: true }
     )
     .setImage('https://media.discordapp.net/attachments/962353412480069652/1430000000000000000/vs_battle.gif')
@@ -1211,8 +1213,8 @@ async function handleVsButton(interaction) {
         .setColor(0xFF0000)
         .setDescription('Bir oyuncunun yeterli bakiyesi kalmadı!')
         .addFields(
-          { name: `${challenger.username}`, value: `${challengerData.balance} coin`, inline: true },
-          { name: `${opponent.username}`, value: `${opponentData.balance} coin`, inline: true }
+          { name: `${challenger.username}`, value: `${challengerData.balance.toLocaleString()} coin`, inline: true },
+          { name: `${opponent.username}`, value: `${opponentData.balance.toLocaleString()} coin`, inline: true }
         );
 
       await interaction.update({ 
@@ -1282,7 +1284,7 @@ async function startVsBattle(originalInteraction, challenger, opponent, betAmoun
         { name: '⚔️ Kazanan', value: `${winner.username}\n+${betAmount.toLocaleString()} coin`, inline: true },
         { name: '💀 Kaybeden', value: `${loser.username}\n-${betAmount.toLocaleString()} coin`, inline: true },
         { name: '❤️ Can Durumu', value: `**${winner.username}:** ${winnerHP} HP\n**${loser.username}:** ${loserHP} HP`, inline: false },
-        { name: '💰 Önceki/Sonraki', value: `**${winner.username}:** ${winnerOldBalance} → ${winnerData.balance} coin\n**${loser.username}:** ${loserOldBalance} → ${loserData.balance} coin`, inline: false }
+        { name: '💰 Önceki/Sonraki', value: `**${winner.username}:** ${winnerOldBalance.toLocaleString()} → ${winnerData.balance.toLocaleString()} coin\n**${loser.username}:** ${loserOldBalance.toLocaleString()} → ${loserData.balance.toLocaleString()} coin`, inline: false }
       )
       .setImage(winner.id === challenger.id ? 
         'https://media.discordapp.net/attachments/962353412480069652/1430000000000000002/victory_challenger.gif' :
@@ -1319,7 +1321,7 @@ async function handleGambleButton(interaction) {
 
   if (userData.balance < betAmount) {
     return await interaction.reply({
-      content: `❌ Yeterli bakiyen yok! ${betAmount} coin gerekiyor, senin bakiyen: ${userData.balance} coin`,
+      content: `❌ Yeterli bakiyen yok! ${betAmount.toLocaleString()} coin gerekiyor, senin bakiyen: ${userData.balance.toLocaleString()} coin`,
       ephemeral: true
     });
   }
@@ -1419,7 +1421,7 @@ async function handleGambleModal(interaction) {
 
     if (userData.balance < betAmount) {
       return await interaction.reply({
-        content: `❌ Yeterli bakiyen yok! ${betAmount} coin gerekiyor, senin bakiyen: ${userData.balance} coin`,
+        content: `❌ Yeterli bakiyen yok! ${betAmount.toLocaleString()} coin gerekiyor, senin bakiyen: ${userData.balance.toLocaleString()} coin`,
         ephemeral: true
       });
     }
