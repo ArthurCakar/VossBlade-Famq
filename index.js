@@ -117,7 +117,8 @@ function initializeUserEconomy(userId) {
       lastDaily: 0,
       achievements: [],
       inventory: [],
-      investments: {}
+      investments: {},
+      currentBet: 0
     });
   }
   return userEconomy.get(userId);
@@ -232,6 +233,20 @@ const commands = [
     .setName('gamble')
     .setDescription('Kumar oyunları oyna.'),
 
+  // YENİ KOMUT: ADD-COIN
+  new SlashCommandBuilder()
+    .setName('add-coin')
+    .setDescription('Belirtilen kullanıcıya coin ekler. (Sadece Bot Sahibi)')
+    .addUserOption(option =>
+      option.setName('kullanıcı')
+        .setDescription('Coin eklemek istediğiniz kullanıcı')
+        .setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('miktar')
+        .setDescription('Eklenecek coin miktarı')
+        .setRequired(true)
+        .setMinValue(1)),
+
 ].map(command => command.toJSON());
 
 // Register slash commands
@@ -271,7 +286,7 @@ client.on('interactionCreate', async (interaction) => {
             },
             {
               name: '💰 **Ekonomi Sistemi**',
-              value: '• `/daily` - Günlük ödül\n• `/work` - Çalışarak para kazan\n• `/profile` - Ekonomi profili\n• `/leaderboard` - Zenginlik sıralaması\n• `/invest` - Sanal borsa\n• `/gamble` - Kumar oyunları',
+              value: '• `/daily` - Günlük ödül\n• `/work` - Çalışarak para kazan\n• `/profile` - Ekonomi profili\n• `/leaderboard` - Zenginlik sıralaması\n• `/invest` - Sanal borsa\n• `/gamble` - Kumar oyunları\n• `/add-coin` - Coin ekleme (Sadece Bot Sahibi)',
               inline: false
             },
             {
@@ -491,6 +506,11 @@ client.on('interactionCreate', async (interaction) => {
 
       else if (commandName === 'gamble') {
         await handleGambleCommand(interaction);
+      }
+
+      // YENİ KOMUT: ADD-COIN
+      else if (commandName === 'add-coin') {
+        await handleAddCoinCommand(interaction);
       }
 
     } catch (error) {
@@ -832,41 +852,65 @@ async function handleStockSelect(interaction) {
   await interaction.update({ embeds: [investEmbed], components: [] });
 }
 
+// GÜNCELLENMİŞ GAMBLE KOMUTU
 async function handleGambleCommand(interaction) {
-  const row = new ActionRowBuilder()
-    .addComponents(
-      new ButtonBuilder()
-        .setCustomId('gamble_slot')
-        .setLabel('🎰 Slot Makinesi')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId('gamble_dice')
-        .setLabel('🎲 Zar At')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('gamble_coin')
-        .setLabel('⭕️ Yazı-Tura')
-        .setStyle(ButtonStyle.Secondary)
-    );
+  const modal = new ModalBuilder()
+    .setCustomId('gambleModal')
+    .setTitle('Kumar Oyunu - Bahis Miktarı');
 
-  const gambleEmbed = new EmbedBuilder()
-    .setTitle('🎰 Kumar Oyunları')
-    .setDescription('Aşağıdan oynamak istediğiniz oyunu seçin:')
-    .setColor(0x9B59B6)
-    .addFields(
-      { name: '🎰 Slot Makinesi', value: 'Büyük kazançlar için!', inline: true },
-      { name: '🎲 Zar At', value: 'Basit ve eğlenceli', inline: true },
-      { name: '⭕️ Yazı-Tura', value: '%50 şans', inline: true }
-    )
-    .setFooter({ text: 'Kumar bağımlılık yapabilir, dikkatli oynayın!', iconURL: interaction.user.displayAvatarURL() });
+  const betInput = new TextInputBuilder()
+    .setCustomId('betAmount')
+    .setLabel("Bahis Miktarı (coin)")
+    .setPlaceholder("100")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMinLength(1)
+    .setMaxLength(10);
 
-  await interaction.reply({ embeds: [gambleEmbed], components: [row], ephemeral: true });
+  const actionRow = new ActionRowBuilder().addComponents(betInput);
+  modal.addComponents(actionRow);
+
+  await interaction.showModal(modal);
 }
 
+// YENİ ADD-COIN KOMUTU
+async function handleAddCoinCommand(interaction) {
+  // Sadece bot sahibi kullanabilsin
+  if (interaction.user.id !== '726500417021804648') {
+    return await interaction.reply({
+      content: '❌ Bu komutu sadece bot sahibi kullanabilir!',
+      ephemeral: true
+    });
+  }
+
+  const targetUser = interaction.options.getUser('kullanıcı');
+  const amount = interaction.options.getInteger('miktar');
+  const userData = initializeUserEconomy(targetUser.id);
+
+  userData.balance += amount;
+
+  const addCoinEmbed = new EmbedBuilder()
+    .setTitle('💰 Coin Eklendi!')
+    .setColor(0x00FF00)
+    .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+    .addFields(
+      { name: '👤 Kullanıcı', value: `${targetUser.tag}`, inline: true },
+      { name: '🆔 ID', value: targetUser.id, inline: true },
+      { name: '💰 Eklenecek Miktar', value: `${amount.toLocaleString()} coin`, inline: true },
+      { name: '💳 Yeni Bakiye', value: `${userData.balance.toLocaleString()} coin`, inline: true },
+      { name: '👤 İşlemi Yapan', value: interaction.user.tag, inline: true }
+    )
+    .setFooter({ text: 'FamqVerse Yönetici Sistemi', iconURL: interaction.user.displayAvatarURL() })
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [addCoinEmbed] });
+}
+
+// GÜNCELLENMİŞ GAMBLE BUTON İŞLEYİCİSİ
 async function handleGambleButton(interaction) {
   const userData = initializeUserEconomy(interaction.user.id);
   const gameType = interaction.customId.split('_')[1];
-  const betAmount = 100; // Sabit bahis
+  const betAmount = userData.currentBet || 100;
 
   if (userData.balance < betAmount) {
     return await interaction.reply({
@@ -904,7 +948,7 @@ async function handleGambleButton(interaction) {
       const userRoll = Math.floor(Math.random() * 6) + 1;
       const botRoll = Math.floor(Math.random() * 6) + 1;
       
-      result = `Sen: ${userRoll} | Bot: ${botRoll}`;
+      result = `🎲 **Sen:** ${userRoll} | **Bot:** ${botRoll}`;
       
       if (userRoll > botRoll) {
         winAmount = betAmount * 2;
@@ -917,7 +961,7 @@ async function handleGambleButton(interaction) {
       const coinResult = Math.random() > 0.5 ? 'Yazı' : 'Tura';
       const userChoice = Math.random() > 0.5 ? 'Yazı' : 'Tura';
       
-      result = `Sen: ${userChoice} | Sonuç: ${coinResult}`;
+      result = `⭕️ **Sen:** ${userChoice} | **Sonuç:** ${coinResult}`;
       
       if (userChoice === coinResult) {
         winAmount = betAmount * 1.8;
@@ -926,28 +970,101 @@ async function handleGambleButton(interaction) {
   }
 
   userData.balance += winAmount;
+  userData.currentBet = 0; // Bahsi sıfırla
 
   const gambleResultEmbed = new EmbedBuilder()
     .setTitle(`🎰 ${gameType === 'slot' ? 'Slot Makinesi' : gameType === 'dice' ? 'Zar Oyunu' : 'Yazı-Tura'}`)
-    .setColor(winAmount > 0 ? 0x00FF00 : 0xFF0000)
+    .setColor(winAmount > betAmount ? 0x00FF00 : winAmount > 0 ? 0xFFA500 : 0xFF0000)
     .addFields(
+      { name: '👤 Oyuncu', value: interaction.user.toString(), inline: true },
       { name: '🎯 Sonuç', value: result, inline: false },
-      { name: '💰 Bahis', value: `${betAmount} coin`, inline: true },
-      { name: '🎉 Kazanç', value: `${winAmount} coin`, inline: true },
-      { name: '💳 Yeni Bakiye', value: `${userData.balance} coin`, inline: true }
-    );
+      { name: '💰 Bahis', value: `${betAmount.toLocaleString()} coin`, inline: true },
+      { name: '🎉 Kazanç', value: `${winAmount.toLocaleString()} coin`, inline: true },
+      { name: '💳 Yeni Bakiye', value: `${userData.balance.toLocaleString()} coin`, inline: true }
+    )
+    .setFooter({ 
+      text: winAmount > 0 ? '🎉 Tebrikler!' : '😔 Bir dahaki sefere!', 
+      iconURL: interaction.user.displayAvatarURL() 
+    })
+    .setTimestamp();
 
-  if (winAmount > 0) {
-    gambleResultEmbed.setDescription('🎉 **Tebrikler, kazandın!**');
+  if (winAmount > betAmount) {
+    gambleResultEmbed.setDescription('**🎊 BÜYÜK KAZANÇ!**');
+  } else if (winAmount > 0) {
+    gambleResultEmbed.setDescription('**🎉 Tebrikler, kazandın!**');
   } else {
-    gambleResultEmbed.setDescription('😔 **Maalesef kaybettin, bir dahaki sefere!**');
+    gambleResultEmbed.setDescription('**😔 Maalesef kaybettin, bir dahaki sefere!**');
   }
 
   await interaction.update({ embeds: [gambleResultEmbed], components: [] });
 }
 
-// DİĞER FONKSİYONLAR (STATUS, REMINDER vb.) AYNI KALACAK
-// Burada sadece ekonomi fonksiyonlarını gösterdim, diğer fonksiyonlar önceki mesajlardaki gibi olacak
+// YENİ GAMBLE MODAL İŞLEYİCİSİ
+async function handleGambleModal(interaction) {
+  try {
+    const betAmount = parseInt(interaction.fields.getTextInputValue('betAmount'));
+    const userData = initializeUserEconomy(interaction.user.id);
+
+    if (isNaN(betAmount) || betAmount < 1) {
+      return await interaction.reply({
+        content: '❌ Geçersiz bahis miktarı! Lütfen pozitif bir sayı girin.',
+        ephemeral: true
+      });
+    }
+
+    if (userData.balance < betAmount) {
+      return await interaction.reply({
+        content: `❌ Yeterli bakiyen yok! ${betAmount} coin gerekiyor, senin bakiyen: ${userData.balance} coin`,
+        ephemeral: true
+      });
+    }
+
+    // Bahis miktarını kullanıcı verisine kaydet
+    userData.currentBet = betAmount;
+
+    const row = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('gamble_slot')
+          .setLabel('🎰 Slot Makinesi')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('gamble_dice')
+          .setLabel('🎲 Zar At')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('gamble_coin')
+          .setLabel('⭕️ Yazı-Tura')
+          .setStyle(ButtonStyle.Secondary)
+      );
+
+    const gambleEmbed = new EmbedBuilder()
+      .setTitle('🎰 Kumar Oyunları')
+      .setDescription(`**Bahis Miktarı:** ${betAmount.toLocaleString()} coin\nAşağıdan oynamak istediğiniz oyunu seçin:`)
+      .setColor(0x9B59B6)
+      .addFields(
+        { name: '🎰 Slot Makinesi', value: 'Büyük kazançlar için!', inline: true },
+        { name: '🎲 Zar At', value: 'Basit ve eğlenceli', inline: true },
+        { name: '⭕️ Yazı-Tura', value: '%50 şans', inline: true }
+      )
+      .setFooter({ 
+        text: `Kumar bağımlılık yapabilir, dikkatli oynayın! • ${interaction.user.username}`, 
+        iconURL: interaction.user.displayAvatarURL() 
+      });
+
+    await interaction.reply({ 
+      embeds: [gambleEmbed], 
+      components: [row] 
+    });
+
+  } catch (error) {
+    console.error('Gamble modal hatası:', error);
+    await interaction.reply({
+      content: '❌ Bahis işlemi sırasında bir hata oluştu!',
+      ephemeral: true
+    });
+  }
+}
 
 // STATUS KOMUTU
 async function handleStatusCommand(interaction) {
@@ -1141,6 +1258,8 @@ async function handleModalSubmit(interaction) {
         ephemeral: true 
       });
     }
+  } else if (interaction.customId === 'gambleModal') {
+    await handleGambleModal(interaction);
   }
 }
 
