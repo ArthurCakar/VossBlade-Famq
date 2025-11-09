@@ -1,18 +1,25 @@
 {
   "name": "vossblade-bot",
-  "version": "3.0.0",
-  "description": "VossBlade Famq Discord Bot with Virtual Economy",
+  "version": "3.1.0",
+  "description": "VossBlade Famq Discord Bot with Virtual Economy & Registration System",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "node --watch index.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
     "express": "^4.18.2"
   },
   "engines": {
-    "node": "18.x"
+    "node": ">=18.0.0"
   },
+  "keywords": [
+    "discord-bot",
+    "economy",
+    "registration",
+    "turkey"
+  ],
   "author": "VossBlade",
   "license": "MIT"
 }
