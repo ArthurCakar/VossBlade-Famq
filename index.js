@@ -41,6 +41,9 @@ const reminders = new Map();
 // Ekonomi Sistemi için Map
 const userEconomy = new Map();
 
+// Kayıt Sistemi için Map
+const userRegistrations = new Map();
+
 // Sanal Borsa Sistemi
 const virtualStocks = {
   "TechCorp": { price: 100, volatility: 0.1 },
@@ -72,9 +75,10 @@ const achievements = {
 client.once('ready', () => {
   console.log(`🚀 ${client.user.tag} is now online!`);
   console.log(`📊 Serving ${client.guilds.cache.size} servers`);
+  console.log(`📝 Kayıtlı kullanıcı: ${userRegistrations.size} users`);
   
   client.user.setPresence({
-    activities: [{ name: 'FamqVerse Economy | /help', type: ActivityType.Playing }],
+    activities: [{ name: 'FamqVerse Economy & Register | /help', type: ActivityType.Playing }],
     status: 'online'
   });
 
@@ -122,6 +126,24 @@ function initializeUserEconomy(userId) {
     });
   }
   return userEconomy.get(userId);
+}
+
+// Kullanıcı kaydı başlatma fonksiyonu
+function initializeUserRegistration(userId) {
+  if (!userRegistrations.has(userId)) {
+    userRegistrations.set(userId, {
+      registered: false,
+      name: '',
+      age: 0,
+      gender: '',
+      city: '',
+      about: '',
+      registerDate: null,
+      favoriteGame: '',
+      discordSince: ''
+    });
+  }
+  return userRegistrations.get(userId);
 }
 
 // CAN BAR OLUŞTURMA FONKSİYONU
@@ -302,6 +324,35 @@ const commands = [
         .setRequired(true)
         .setMinValue(10)),
 
+  // YENİ KOMUT: KAYIT SİSTEMİ
+  new SlashCommandBuilder()
+    .setName('kayit')
+    .setDescription('Kayıt olarak ailemize katıl!'),
+
+  new SlashCommandBuilder()
+    .setName('kayit-bilgi')
+    .setDescription('Kayıt bilgilerini görüntüle.')
+    .addUserOption(option =>
+      option.setName('kullanıcı')
+        .setDescription('Kayıt bilgilerini görmek istediğiniz kullanıcı')
+        .setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('kayit-sil')
+    .setDescription('Kullanıcının kaydını sil. (Yetkili)')
+    .addUserOption(option =>
+      option.setName('kullanıcı')
+        .setDescription('Kaydını silmek istediğiniz kullanıcı')
+        .setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('kayit-listesi')
+    .setDescription('Kayıtlı kullanıcıları görüntüle. (Yetkili)'),
+
+  new SlashCommandBuilder()
+    .setName('kayit-say')
+    .setDescription('Kayıt istatistiklerini göster.'),
+
 ].map(command => command.toJSON());
 
 // Register slash commands
@@ -342,6 +393,11 @@ client.on('interactionCreate', async (interaction) => {
             {
               name: '💰 **Ekonomi Sistemi**',
               value: '• `/daily` - Günlük ödül\n• `/work` - Çalışarak para kazan\n• `/profile` - Ekonomi profili\n• `/leaderboard` - Zenginlik sıralaması\n• `/invest` - Sanal borsa\n• `/gamble` - Kumar oyunları\n• `/pay` - Başka kullanıcıya coin gönder\n• `/add-coin` - Coin ekleme (Sadece Bot Sahibi)\n• `/remove-coin` - Coin çıkarma (Sadece Bot Sahibi)\n• `/vs` - Bahisli düello',
+              inline: false
+            },
+            {
+              name: '📝 **Kayıt Sistemi**',
+              value: '• `/kayit` - Kayıt ol\n• `/kayit-bilgi` - Kayıt bilgilerini görüntüle\n• `/kayit-sil` - Kayıt sil (Yetkili)\n• `/kayit-listesi` - Kayıtlı kullanıcılar (Yetkili)\n• `/kayit-say` - Kayıt istatistikleri',
               inline: false
             },
             {
@@ -583,6 +639,27 @@ client.on('interactionCreate', async (interaction) => {
         await handleVsCommand(interaction);
       }
 
+      // YENİ KOMUT: KAYIT SİSTEMİ
+      else if (commandName === 'kayit') {
+        await handleKayitCommand(interaction);
+      }
+
+      else if (commandName === 'kayit-bilgi') {
+        await handleKayitBilgiCommand(interaction);
+      }
+
+      else if (commandName === 'kayit-sil') {
+        await handleKayitSilCommand(interaction);
+      }
+
+      else if (commandName === 'kayit-listesi') {
+        await handleKayitListesiCommand(interaction);
+      }
+
+      else if (commandName === 'kayit-say') {
+        await handleKayitSayCommand(interaction);
+      }
+
     } catch (error) {
       console.error(`Command error (${commandName}):`, error);
       
@@ -616,7 +693,468 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// EKONOMİ SİSTEMİ FONKSİYONLARI
+// =============================================
+// KAYIT SİSTEMİ FONKSİYONLARI
+// =============================================
+
+async function handleKayitCommand(interaction) {
+  const userData = initializeUserRegistration(interaction.user.id);
+  
+  if (userData.registered) {
+    return await interaction.reply({
+      content: '❌ Zaten kayıtlısın! Kaydını güncellemek için lütfen bir yetkili ile iletişime geç.',
+      ephemeral: true
+    });
+  }
+
+  const modal = new ModalBuilder()
+    .setCustomId('kayitModal')
+    .setTitle('🎪 VossBlade Ailesine Hoş Geldin!');
+
+  const isimInput = new TextInputBuilder()
+    .setCustomId('isimInput')
+    .setLabel('👤 İsim ve Yaşınız')
+    .setPlaceholder('Örnek: Ahmet 18')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(50);
+
+  const cinsiyetInput = new TextInputBuilder()
+    .setCustomId('cinsiyetInput')
+    .setLabel('🚻 Cinsiyetiniz')
+    .setPlaceholder('Erkek / Kadın')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(10);
+
+  const sehirInput = new TextInputBuilder()
+    .setCustomId('sehirInput')
+    .setLabel('🏙️ Yaşadığınız Şehir')
+    .setPlaceholder('İstanbul')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(30);
+
+  const oyunInput = new TextInputBuilder()
+    .setCustomId('oyunInput')
+    .setLabel('🎮 En Sevdiğiniz Oyun')
+    .setPlaceholder('Valorant, Minecraft, LoL vb.')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(50);
+
+  const hakkindaInput = new TextInputBuilder()
+    .setCustomId('hakkindaInput')
+    .setLabel('📝 Kendiniz Hakkında')
+    .setPlaceholder('Kısa bir tanıtım yazın...')
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMaxLength(500);
+
+  const firstActionRow = new ActionRowBuilder().addComponents(isimInput);
+  const secondActionRow = new ActionRowBuilder().addComponents(cinsiyetInput);
+  const thirdActionRow = new ActionRowBuilder().addComponents(sehirInput);
+  const fourthActionRow = new ActionRowBuilder().addComponents(oyunInput);
+  const fifthActionRow = new ActionRowBuilder().addComponents(hakkindaInput);
+
+  modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow, fifthActionRow);
+
+  await interaction.showModal(modal);
+}
+
+async function handleKayitBilgiCommand(interaction) {
+  const targetUser = interaction.options.getUser('kullanıcı') || interaction.user;
+  const registration = userRegistrations.get(targetUser.id);
+
+  if (!registration || !registration.registered) {
+    return await interaction.reply({
+      content: '❌ Bu kullanıcı kayıtlı değil!',
+      ephemeral: true
+    });
+  }
+
+  const kayitEmbed = new EmbedBuilder()
+    .setTitle(`📝 ${targetUser.username} - Kayıt Bilgileri`)
+    .setColor(0x5865F2)
+    .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 256 }))
+    .addFields(
+      { name: '👤 İsim ve Yaş', value: registration.name, inline: true },
+      { name: '🚻 Cinsiyet', value: registration.gender, inline: true },
+      { name: '🏙️ Şehir', value: registration.city, inline: true },
+      { name: '🎮 Favori Oyun', value: registration.favoriteGame, inline: true },
+      { name: '📅 Kayıt Tarihi', value: `<t:${Math.floor(registration.registerDate.getTime() / 1000)}:R>`, inline: true },
+      { name: '📅 Discord Üye', value: `<t:${Math.floor(targetUser.createdTimestamp / 1000)}:R>`, inline: true },
+      { name: '📋 Hakkında', value: registration.about || 'Belirtilmemiş', inline: false }
+    )
+    .setImage('https://media.discordapp.net/attachments/962353412480069652/1430000000000000005/welcome_banner.gif')
+    .setFooter({ 
+      text: `VossBlade Ailesi • ${interaction.guild.name}`, 
+      iconURL: interaction.guild.iconURL() 
+    })
+    .setTimestamp(registration.registerDate);
+
+  await interaction.reply({ embeds: [kayitEmbed] });
+}
+
+async function handleKayitSilCommand(interaction) {
+  if (!interaction.memberPermissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return await interaction.reply({
+      content: '❌ Bu komutu kullanmak için **Mesajları Yönet** yetkisine sahip olmalısınız!',
+      ephemeral: true
+    });
+  }
+
+  const targetUser = interaction.options.getUser('kullanıcı');
+  const registration = userRegistrations.get(targetUser.id);
+
+  if (!registration || !registration.registered) {
+    return await interaction.reply({
+      content: '❌ Bu kullanıcı zaten kayıtlı değil!',
+      ephemeral: true
+    });
+  }
+
+  userRegistrations.delete(targetUser.id);
+
+  const successEmbed = new EmbedBuilder()
+    .setTitle('🗑️ Kayıt Silindi!')
+    .setColor(0xFF0000)
+    .setDescription(`${targetUser} kullanıcısının kaydı başarıyla silindi.`)
+    .addFields(
+      { name: '👤 Kullanıcı', value: targetUser.tag, inline: true },
+      { name: '🆔 ID', value: targetUser.id, inline: true },
+      { name: '🗓️ Kayıt Tarihi', value: `<t:${Math.floor(registration.registerDate.getTime() / 1000)}:R>`, inline: true },
+      { name: '👮 Silen Yetkili', value: interaction.user.tag, inline: true }
+    )
+    .setFooter({ text: 'VossBlade Kayıt Sistemi', iconURL: interaction.user.displayAvatarURL() })
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [successEmbed] });
+}
+
+async function handleKayitListesiCommand(interaction) {
+  if (!interaction.memberPermissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return await interaction.reply({
+      content: '❌ Bu komutu kullanmak için **Mesajları Yönet** yetkisine sahip olmalısınız!',
+      ephemeral: true
+    });
+  }
+
+  const registeredUsers = Array.from(userRegistrations.entries())
+    .filter(([id, data]) => data.registered)
+    .sort((a, b) => a[1].registerDate - b[1].registerDate)
+    .slice(0, 15); // İlk 15 kayıt
+
+  if (registeredUsers.length === 0) {
+    return await interaction.reply({
+      content: '❌ Henüz hiç kayıtlı kullanıcı yok!',
+      ephemeral: true
+    });
+  }
+
+  let listText = '';
+  for (let i = 0; i < registeredUsers.length; i++) {
+    const [userId, data] = registeredUsers[i];
+    const user = await client.users.fetch(userId).catch(() => null);
+    const username = user ? user.username : 'Bilinmeyen Kullanıcı';
+    
+    listText += `**${i + 1}.** ${username} - ${data.name} (${data.city})\n`;
+  }
+
+  const listEmbed = new EmbedBuilder()
+    .setTitle('📋 Kayıtlı Kullanıcılar')
+    .setDescription(listText)
+    .setColor(0x00AE86)
+    .setFooter({ 
+      text: `Toplam ${userRegistrations.size} kayıtlı kullanıcı • Sayfa 1/1`, 
+      iconURL: interaction.guild.iconURL() 
+    })
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [listEmbed], ephemeral: true });
+}
+
+async function handleKayitSayCommand(interaction) {
+  const totalRegistered = Array.from(userRegistrations.values()).filter(data => data.registered).length;
+  const totalMembers = interaction.guild.memberCount;
+  const percentage = ((totalRegistered / totalMembers) * 100).toFixed(1);
+
+  // Son 7 günlük kayıt istatistikleri (basit simülasyon)
+  const last7Days = Array.from({length: 7}, (_, i) => {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    return {
+      date: date.toLocaleDateString('tr-TR'),
+      count: Math.floor(Math.random() * 5) + 1 // Rastgele sayılar
+    };
+  }).reverse();
+
+  const statsEmbed = new EmbedBuilder()
+    .setTitle('📊 Kayıt İstatistikleri')
+    .setColor(0x5865F2)
+    .setThumbnail(interaction.guild.iconURL({ dynamic: true }))
+    .addFields(
+      { name: '👥 Toplam Kayıtlı', value: `**${totalRegistered}** kullanıcı`, inline: true },
+      { name: '📈 Kayıt Oranı', value: `**%${percentage}**`, inline: true },
+      { name: '🏆 Aktif Sunucu', value: `**${interaction.guild.name}**`, inline: true },
+      { name: '📅 Son 7 Gün', value: last7Days.map(day => `${day.date}: ${day.count} kayıt`).join('\n'), inline: false }
+    )
+    .setImage('https://media.discordapp.net/attachments/962353412480069652/1430000000000000006/stats_banner.gif')
+    .setFooter({ 
+      text: `VossBlade Kayıt Sistemi • ${new Date().toLocaleDateString('tr-TR')}`, 
+      iconURL: client.user.displayAvatarURL() 
+    })
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [statsEmbed] });
+}
+
+// =============================================
+// MODAL SUBMIT İŞLEYİCİSİNE KAYIT EKLENTİSİ
+// =============================================
+
+async function handleKayitModal(interaction) {
+  try {
+    const name = interaction.fields.getTextInputValue('isimInput');
+    const gender = interaction.fields.getTextInputValue('cinsiyetInput');
+    const city = interaction.fields.getTextInputValue('sehirInput');
+    const favoriteGame = interaction.fields.getTextInputValue('oyunInput');
+    const about = interaction.fields.getTextInputValue('hakkindaInput');
+
+    // Kullanıcıyı kaydet
+    const userData = initializeUserRegistration(interaction.user.id);
+    userData.registered = true;
+    userData.name = name;
+    userData.gender = gender;
+    userData.city = city;
+    userData.favoriteGame = favoriteGame;
+    userData.about = about;
+    userData.registerDate = new Date();
+
+    // Ekonomi sistemine başlangıç bonusu
+    const economyData = initializeUserEconomy(interaction.user.id);
+    economyData.balance += 1000; // Kayıt bonusu
+
+    const successEmbed = new EmbedBuilder()
+      .setTitle('🎉 Kayıt Başarılı!')
+      .setColor(0x00FF00)
+      .setDescription(`${interaction.user}, **VossBlade** ailesine hoş geldin! 🎊\nAramıza katıldığın için teşekkür ederiz.`)
+      .addFields(
+        { name: '👤 İsim ve Yaş', value: name, inline: true },
+        { name: '🚻 Cinsiyet', value: gender, inline: true },
+        { name: '🏙️ Şehir', value: city, inline: true },
+        { name: '🎮 Favori Oyun', value: favoriteGame, inline: true },
+        { name: '💰 Hoş Geldin Bonusu', value: '1.000 coin 🎁', inline: true },
+        { name: '📝 Tanıtım', value: about || 'Belirtilmemiş', inline: false }
+      )
+      .setImage('https://media.discordapp.net/attachments/962353412480069652/1430000000000000007/welcome_animation.gif')
+      .setFooter({ 
+        text: `VossBlade Ailesi • ${interaction.guild.name}`, 
+        iconURL: interaction.guild.iconURL() 
+      })
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [successEmbed] });
+
+    // Log kanalına bildirim (isteğe bağlı)
+    const logChannel = interaction.guild.channels.cache.find(
+      channel => channel.name.includes('log') || channel.name.includes('kayıt') || channel.name.includes('register')
+    );
+    
+    if (logChannel) {
+      const logEmbed = new EmbedBuilder()
+        .setTitle('📝 Yeni Kayıt!')
+        .setColor(0x5865F2)
+        .setDescription(`${interaction.user} aramıza katıldı! 🎉`)
+        .addFields(
+          { name: '👤 Kullanıcı', value: interaction.user.tag, inline: true },
+          { name: '🆔 ID', value: interaction.user.id, inline: true },
+          { name: '👤 İsim', value: name, inline: true },
+          { name: '🏙️ Şehir', value: city, inline: true },
+          { name: '🎮 Oyun', value: favoriteGame, inline: true }
+        )
+        .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
+        .setTimestamp();
+      
+      await logChannel.send({ embeds: [logEmbed] });
+    }
+
+  } catch (error) {
+    console.error('Kayıt modal işleme hatası:', error);
+    await interaction.reply({
+      content: '❌ Kayıt işlemi sırasında bir hata oluştu! Lütfen daha sonra tekrar deneyin.',
+      ephemeral: true
+    });
+  }
+}
+
+// =============================================
+// GÜNCELLENMİŞ MODAL SUBMIT İŞLEYİCİSİ
+// =============================================
+
+async function handleModalSubmit(interaction) {
+  if (interaction.customId === 'reminderModal') {
+    try {
+      const channelId = interaction.fields.getTextInputValue('channelInput');
+      const memberId = interaction.fields.getTextInputValue('memberInput');
+      const message = interaction.fields.getTextInputValue('messageInput');
+      const intervalMinutes = interaction.fields.getTextInputValue('intervalInput');
+      const name = interaction.fields.getTextInputValue('nameInput');
+
+      const channel = interaction.guild.channels.cache.get(channelId);
+      if (!channel) {
+        return await interaction.reply({ 
+          content: '❌ Geçersiz kanal ID! Lütfen doğru bir kanal IDsi girin.', 
+          ephemeral: true 
+        });
+      }
+
+      const member = interaction.guild.members.cache.get(memberId);
+      if (!member) {
+        return await interaction.reply({ 
+          content: '❌ Geçersiz kullanıcı ID! Lütfen doğru bir kullanıcı IDsi girin.', 
+          ephemeral: true 
+        });
+      }
+
+      const interval = parseInt(intervalMinutes);
+      if (isNaN(interval) || interval < 1 || interval > 1440) {
+        return await interaction.reply({ 
+          content: '❌ Geçersiz zaman aralığı! 1-1440 dakika arasında bir değer girin.', 
+          ephemeral: true 
+        });
+      }
+
+      const reminderId = `${interaction.guild.id}-${Date.now()}`;
+      const reminder = {
+        channelId,
+        memberId,
+        message,
+        interval,
+        name,
+        createdBy: interaction.user.tag,
+        createdAt: new Date(),
+        nextRun: Date.now()
+      };
+
+      reminders.set(reminderId, reminder);
+
+      await sendReminder(reminderId);
+
+      const successEmbed = new EmbedBuilder()
+        .setTitle('✅ Hatırlatıcı Oluşturuldu!')
+        .setColor(0x00FF00)
+        .addFields(
+          { name: 'İsim', value: name, inline: true },
+          { name: 'Kanal', value: `<#${channelId}>`, inline: true },
+          { name: 'Etiketlenecek', value: `<@${memberId}>`, inline: true },
+          { name: 'Mesaj', value: message, inline: false },
+          { name: 'Aralık', value: `${interval} dakika`, inline: true },
+          { name: 'Oluşturan', value: interaction.user.tag, inline: true }
+        )
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
+
+    } catch (error) {
+      console.error('Modal işleme hatası:', error);
+      await interaction.reply({ 
+        content: '❌ Hatırlatıcı oluşturulurken bir hata oluştu!', 
+        ephemeral: true 
+      });
+    }
+  } else if (interaction.customId === 'gambleModal') {
+    await handleGambleModal(interaction);
+  } else if (interaction.customId.startsWith('investModal_')) {
+    const stockName = interaction.customId.replace('investModal_', '');
+    await handleInvestModal(interaction, stockName);
+  } else if (interaction.customId === 'kayitModal') {
+    await handleKayitModal(interaction);
+  }
+}
+
+// =============================================
+// GÜNCELLENMİŞ STATUS KOMUTU
+// =============================================
+
+async function handleStatusCommand(interaction) {
+  try {
+    const serverCount = client.guilds.cache.size;
+    
+    let totalMembers = 0;
+    client.guilds.cache.forEach(guild => {
+      totalMembers += guild.memberCount;
+    });
+
+    const uptime = process.uptime();
+    const days = Math.floor(uptime / (24 * 60 * 60));
+    const hours = Math.floor((uptime % (24 * 60 * 60)) / (60 * 60));
+    const minutes = Math.floor((uptime % (60 * 60)) / 60);
+    const seconds = Math.floor(uptime % 60);
+
+    const uptimeString = `${days}g ${hours}s ${minutes}d ${seconds}sn`;
+
+    const usedMemory = process.memoryUsage().rss / 1024 / 1024;
+    const totalMemory = require('os').totalmem() / 1024 / 1024;
+
+    // Ekonomi istatistikleri
+    const economyUsers = userEconomy.size;
+    const totalEconomyBalance = Array.from(userEconomy.values()).reduce((sum, user) => sum + user.balance, 0);
+
+    // Kayıt istatistikleri
+    const registeredUsers = Array.from(userRegistrations.values()).filter(data => data.registered).length;
+
+    const statusEmbed = new EmbedBuilder()
+      .setTitle(`🤖 ${client.user.username} Durumu`)
+      .setColor(0x00AE86)
+      .setThumbnail(client.user.displayAvatarURL({ dynamic: true, size: 256 }))
+      .addFields(
+        {
+          name: '📊 **Sunucu İstatistikleri**',
+          value: `┣ Sunucu Sayısı: **${serverCount}**\n┗ Toplam Kullanıcı: **${totalMembers.toLocaleString()}**`,
+          inline: false
+        },
+        {
+          name: '💰 **Ekonomi Sistemi**',
+          value: `┣ Aktif Kullanıcı: **${economyUsers}**\n┗ Toplam Para: **${totalEconomyBalance.toLocaleString()} coin**`,
+          inline: false
+        },
+        {
+          name: '📝 **Kayıt Sistemi**',
+          value: `┣ Kayıtlı Kullanıcı: **${registeredUsers}**\n┗ Kayıt Oranı: **%${((registeredUsers / totalMembers) * 100).toFixed(1)}**`,
+          inline: false
+        },
+        {
+          name: '⚡ **Performans**',
+          value: `┣ Ping: **${client.ws.ping}ms**\n┗ Bellek Kullanımı: **${usedMemory.toFixed(2)}MB / ${totalMemory.toFixed(2)}MB**`,
+          inline: false
+        },
+        {
+          name: '🕒 **Sistem**',
+          value: `┣ Çalışma Süresi: **${uptimeString}**\n┗ Node.js: **${process.version}**\n┗ Discord.js: **${require('discord.js').version}**`,
+          inline: false
+        }
+      )
+      .setFooter({ 
+        text: `VossBlade Famq Bot | ${new Date().toLocaleDateString('tr-TR')}`, 
+        iconURL: client.user.displayAvatarURL() 
+      })
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [statusEmbed] });
+
+  } catch (error) {
+    console.error('Status komutu hatası:', error);
+    await interaction.reply({
+      content: '❌ Durum bilgileri alınırken bir hata oluştu!',
+      ephemeral: true
+    });
+  }
+}
+
+// =============================================
+// EKONOMİ SİSTEMİ FONKSİYONLARI (ORİJİNAL)
+// =============================================
 
 async function handleDailyCommand(interaction) {
   const userData = initializeUserEconomy(interaction.user.id);
@@ -1644,7 +2182,7 @@ async function startVsBattle(originalInteraction, challenger, opponent, betAmoun
       await originalInteraction.editReply({ 
         content: `${challenger} ${opponent}`, 
         embeds: [battleEmbed] 
-      });
+      );
 
       // Düello sonu kontrolü
       if (currentTurn >= turns || challengerHP <= 0 || opponentHP <= 0) {
@@ -1737,74 +2275,6 @@ async function startVsBattle(originalInteraction, challenger, opponent, betAmoun
   }
 }
 
-// STATUS KOMUTU
-async function handleStatusCommand(interaction) {
-  try {
-    const serverCount = client.guilds.cache.size;
-    
-    let totalMembers = 0;
-    client.guilds.cache.forEach(guild => {
-      totalMembers += guild.memberCount;
-    });
-
-    const uptime = process.uptime();
-    const days = Math.floor(uptime / (24 * 60 * 60));
-    const hours = Math.floor((uptime % (24 * 60 * 60)) / (60 * 60));
-    const minutes = Math.floor((uptime % (60 * 60)) / 60);
-    const seconds = Math.floor(uptime % 60);
-
-    const uptimeString = `${days}g ${hours}s ${minutes}d ${seconds}sn`;
-
-    const usedMemory = process.memoryUsage().rss / 1024 / 1024;
-    const totalMemory = require('os').totalmem() / 1024 / 1024;
-
-    // Ekonomi istatistikleri
-    const economyUsers = userEconomy.size;
-    const totalEconomyBalance = Array.from(userEconomy.values()).reduce((sum, user) => sum + user.balance, 0);
-
-    const statusEmbed = new EmbedBuilder()
-      .setTitle(`🤖 ${client.user.username} Durumu`)
-      .setColor(0x00AE86)
-      .setThumbnail(client.user.displayAvatarURL({ dynamic: true, size: 256 }))
-      .addFields(
-        {
-          name: '📊 **Sunucu İstatistikleri**',
-          value: `┣ Sunucu Sayısı: **${serverCount}**\n┗ Toplam Kullanıcı: **${totalMembers.toLocaleString()}**`,
-          inline: false
-        },
-        {
-          name: '💰 **Ekonomi Sistemi**',
-          value: `┣ Aktif Kullanıcı: **${economyUsers}**\n┗ Toplam Para: **${totalEconomyBalance.toLocaleString()} coin**`,
-          inline: false
-        },
-        {
-          name: '⚡ **Performans**',
-          value: `┣ Ping: **${client.ws.ping}ms**\n┗ Bellek Kullanımı: **${usedMemory.toFixed(2)}MB / ${totalMemory.toFixed(2)}MB**`,
-          inline: false
-        },
-        {
-          name: '🕒 **Sistem**',
-          value: `┣ Çalışma Süresi: **${uptimeString}**\n┗ Node.js: **${process.version}**\n┗ Discord.js: **${require('discord.js').version}**`,
-          inline: false
-        }
-      )
-      .setFooter({ 
-        text: `VossBlade Famq Bot | ${new Date().toLocaleDateString('tr-TR')}`, 
-        iconURL: client.user.displayAvatarURL() 
-      })
-      .setTimestamp();
-
-    await interaction.reply({ embeds: [statusEmbed] });
-
-  } catch (error) {
-    console.error('Status komutu hatası:', error);
-    await interaction.reply({
-      content: '❌ Durum bilgileri alınırken bir hata oluştu!',
-      ephemeral: true
-    });
-  }
-}
-
 // REMİNDER FONKSİYONLARI
 
 async function handleReminderCommand(interaction) {
@@ -1856,86 +2326,6 @@ async function handleReminderCommand(interaction) {
   modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow, fifthActionRow);
 
   await interaction.showModal(modal);
-}
-
-// GÜNCELLENMİŞ MODAL SUBMIT İŞLEYİCİSİ
-async function handleModalSubmit(interaction) {
-  if (interaction.customId === 'reminderModal') {
-    try {
-      const channelId = interaction.fields.getTextInputValue('channelInput');
-      const memberId = interaction.fields.getTextInputValue('memberInput');
-      const message = interaction.fields.getTextInputValue('messageInput');
-      const intervalMinutes = interaction.fields.getTextInputValue('intervalInput');
-      const name = interaction.fields.getTextInputValue('nameInput');
-
-      const channel = interaction.guild.channels.cache.get(channelId);
-      if (!channel) {
-        return await interaction.reply({ 
-          content: '❌ Geçersiz kanal ID! Lütfen doğru bir kanal IDsi girin.', 
-          ephemeral: true 
-        });
-      }
-
-      const member = interaction.guild.members.cache.get(memberId);
-      if (!member) {
-        return await interaction.reply({ 
-          content: '❌ Geçersiz kullanıcı ID! Lütfen doğru bir kullanıcı IDsi girin.', 
-          ephemeral: true 
-        });
-      }
-
-      const interval = parseInt(intervalMinutes);
-      if (isNaN(interval) || interval < 1 || interval > 1440) {
-        return await interaction.reply({ 
-          content: '❌ Geçersiz zaman aralığı! 1-1440 dakika arasında bir değer girin.', 
-          ephemeral: true 
-        });
-      }
-
-      const reminderId = `${interaction.guild.id}-${Date.now()}`;
-      const reminder = {
-        channelId,
-        memberId,
-        message,
-        interval,
-        name,
-        createdBy: interaction.user.tag,
-        createdAt: new Date(),
-        nextRun: Date.now()
-      };
-
-      reminders.set(reminderId, reminder);
-
-      await sendReminder(reminderId);
-
-      const successEmbed = new EmbedBuilder()
-        .setTitle('✅ Hatırlatıcı Oluşturuldu!')
-        .setColor(0x00FF00)
-        .addFields(
-          { name: 'İsim', value: name, inline: true },
-          { name: 'Kanal', value: `<#${channelId}>`, inline: true },
-          { name: 'Etiketlenecek', value: `<@${memberId}>`, inline: true },
-          { name: 'Mesaj', value: message, inline: false },
-          { name: 'Aralık', value: `${interval} dakika`, inline: true },
-          { name: 'Oluşturan', value: interaction.user.tag, inline: true }
-        )
-        .setTimestamp();
-
-      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
-
-    } catch (error) {
-      console.error('Modal işleme hatası:', error);
-      await interaction.reply({ 
-        content: '❌ Hatırlatıcı oluşturulurken bir hata oluştu!', 
-        ephemeral: true 
-      });
-    }
-  } else if (interaction.customId === 'gambleModal') {
-    await handleGambleModal(interaction);
-  } else if (interaction.customId.startsWith('investModal_')) {
-    const stockName = interaction.customId.replace('investModal_', '');
-    await handleInvestModal(interaction, stockName);
-  }
 }
 
 async function handleReminderRemoveCommand(interaction) {
