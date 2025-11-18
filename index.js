@@ -1866,7 +1866,7 @@ async function startVsBattle(originalInteraction, challenger, opponent, betAmoun
       await originalInteraction.editReply({ 
         content: `${challenger} ${opponent}`, 
         embeds: [battleEmbed] 
-      );
+      )
 
       // Düello sonu kontrolü
       if (currentTurn >= turns || challengerHP <= 0 || opponentHP <= 0) {
