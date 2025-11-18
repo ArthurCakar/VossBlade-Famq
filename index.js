@@ -1,3 +1,22 @@
+const { 
+    Client, 
+    GatewayIntentBits, 
+    EmbedBuilder, 
+    PermissionsBitField, 
+    SlashCommandBuilder, 
+    Routes, 
+    ActivityType, 
+    ModalBuilder, 
+    TextInputBuilder, 
+    TextInputStyle, 
+    ActionRowBuilder, 
+    StringSelectMenuBuilder, 
+    ButtonBuilder, 
+    ButtonStyle,
+    ChannelType 
+} = require('discord.js');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
+
 const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, SlashCommandBuilder, Routes, ActivityType, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
 
@@ -28,11 +47,12 @@ app.listen(PORT, () => {
 
 // Discord Client
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildVoiceStates, // Bu intent'i EKLEYİN
+    ]
 });
 
 // Hatırlatıcılar için Map
@@ -43,6 +63,10 @@ const userEconomy = new Map();
 
 // Kayıt Sistemi için Map
 const userRegistry = new Map();
+
+// Ses Kanalı Sistemi
+let currentVoiceConnection = null;
+let voiceChannelId = null;
 
 // Sanal Borsa Sistemi
 const virtualStocks = {
@@ -73,13 +97,13 @@ const achievements = {
 
 // Bot ready event
 client.once('ready', () => {
-  console.log(`🚀 ${client.user.tag} is now online!`);
-  console.log(`📊 Serving ${client.guilds.cache.size} servers`);
-  
-  client.user.setPresence({
-    activities: [{ name: 'FamqVerse Economy | /help', type: ActivityType.Playing }],
-    status: 'online'
-  });
+    console.log(`🚀 ${client.user.tag} is now online!`);
+    console.log(`📊 Serving ${client.guilds.cache.size} servers`);
+    
+    client.user.setPresence({
+        activities: [{ name: 'FamqVerse Economy | Use /help', type: ActivityType.Playing }],
+        status: 'online'
+    });
 
   // Hatırlatıcı kontrol interval'ini başlat
   setInterval(() => {
@@ -97,6 +121,20 @@ client.once('ready', () => {
   }, 30000);
 });
 
+// Ses bağlantısı durumunu kontrol et (5 dakikada bir)
+    setInterval(() => {
+        if (currentVoiceConnection) {
+            const channel = client.channels.cache.get(voiceChannelId);
+            if (!channel) {
+                console.log('❌ Ses kanalı bulunamadı, bağlantı kesiliyor...');
+                currentVoiceConnection.destroy();
+                currentVoiceConnection = null;
+                voiceChannelId = null;
+            }
+        }
+    }, 300000); // 5 dakika
+});
+
 // Borsa fiyatlarını güncelleme fonksiyonu
 function updateStockPrices() {
   for (const stock in virtualStocks) {
@@ -104,6 +142,96 @@ function updateStockPrices() {
     virtualStocks[stock].price = Math.max(10, virtualStocks[stock].price * (1 + change));
     virtualStocks[stock].price = Math.round(virtualStocks[stock].price * 100) / 100;
   }
+}
+
+// SES KANALI KOMUTLARI
+
+async function handleConnectVcCommand(interaction) {
+    // Yetki kontrolü
+    if (!interaction.memberPermissions.has(PermissionsBitField.Flags.ManageChannels)) {
+        return await interaction.reply({
+            content: '❌ Bu komutu kullanmak için **Kanalları Yönet** yetkisine sahip olmalısınız!',
+            ephemeral: true
+        });
+    }
+
+    // Bot zaten bir ses kanalında mı?
+    if (currentVoiceConnection) {
+        const channel = interaction.guild.channels.cache.get(voiceChannelId);
+        return await interaction.reply({
+            content: `❌ Bot zaten bir ses kanalında! (${channel ? channel.name : 'Bilinmeyen Kanal'})\nÖnce botun bağlantısını kesmek için \`/disconnect-vc\` komutunu kullanın.`,
+            ephemeral: true
+        });
+    }
+
+    // Sunucudaki tüm ses kanallarını al
+    const voiceChannels = interaction.guild.channels.cache.filter(channel => 
+        channel.type === ChannelType.GuildVoice
+    );
+
+    if (voiceChannels.size === 0) {
+        return await interaction.reply({
+            content: '❌ Bu sunucuda hiç ses kanalı bulunmamaktadır!',
+            ephemeral: true
+        });
+    }
+
+    // Select menu oluştur
+    const selectMenu = new ActionRowBuilder()
+        .addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('voiceChannelSelect')
+                .setPlaceholder('Bağlanmak için bir ses kanalı seçin...')
+                .addOptions(
+                    voiceChannels.map(channel => ({
+                        label: channel.name,
+                        description: `Ses kanalı - ${channel.members.size} üye`,
+                        value: channel.id
+                    }))
+                )
+        );
+
+    await interaction.reply({
+        content: '**Botu bağlamak için bir ses kanalı seçin:**',
+        components: [selectMenu],
+        ephemeral: true
+    });
+}
+
+async function handleDisconnectVcCommand(interaction) {
+    // Yetki kontrolü
+    if (!interaction.memberPermissions.has(PermissionsBitField.Flags.ManageChannels)) {
+        return await interaction.reply({
+            content: '❌ Bu komutu kullanmak için **Kanalları Yönet** yetkisine sahip olmalısınız!',
+            ephemeral: true
+        });
+    }
+
+    // Bot bir ses kanalında değilse
+    if (!currentVoiceConnection) {
+        return await interaction.reply({
+            content: '❌ Bot herhangi bir ses kanalında değil!',
+            ephemeral: true
+        });
+    }
+
+    try {
+        // Bağlantıyı kes
+        currentVoiceConnection.destroy();
+        currentVoiceConnection = null;
+        voiceChannelId = null;
+
+        await interaction.reply({
+            content: '✅ Bot ses kanalından başarıyla ayrıldı!',
+            ephemeral: true
+        });
+    } catch (error) {
+        console.error('Ses kanalından ayrılma hatası:', error);
+        await interaction.reply({
+            content: '❌ Ses kanalından ayrılırken bir hata oluştu!',
+            ephemeral: true
+        });
+    }
 }
 
 // Kullanıcı ekonomisi başlatma fonksiyonu
@@ -160,6 +288,16 @@ const commands = [
   new SlashCommandBuilder()
     .setName('help')
     .setDescription('Tüm bot komutlarını gösterir.'),
+
+  // YENİ KOMUT: CONNECT-VC
+new SlashCommandBuilder()
+    .setName('connect-vc')
+    .setDescription('Botu bir ses kanalına bağlar. (Sadece Yetkililer)'),
+
+// YENİ KOMUT: DISCONNECT-VC
+new SlashCommandBuilder()
+    .setName('disconnect-vc')
+    .setDescription('Botu ses kanalından çıkarır. (Sadece Yetkililer)'),
 
   new SlashCommandBuilder()
     .setName('help-economy')
@@ -410,17 +548,17 @@ client.on('interactionCreate', async (interaction) => {
             },
             {
               name: '💰 **Ekonomi Sistemi**',
-              value: '• `/daily` - Günlük ödül\n• `/work` - Çalışarak para kazan\n• `/profile` - Ekonomi profili\n• `/leaderboard` - Zenginlik sıralaması\n• `/invest` - Sanal borsa\n• `/gamble` - Kumar oyunları\n• `/pay` - Başka kullanıcıya coin gönder\n• `/add-coin` - Coin ekleme (Sadece Bot Sahibi)\n• `/remove-coin` - Coin çıkarma (Sadece Bot Sahibi)\n• `/vs` - Bahisli düello\n• `/help-economy` - Ekonomi komutları listesi',
+              value: '• `/help-economy` - Ekonomi komutları listesi',
               inline: false
             },
             {
               name: '📝 **Kayıt Sistemi**',
-              value: '• `/kayit` - Kullanıcıyı kayıt eder\n• `/kayit-sil` - Kullanıcının kaydını siler\n• `/kayit-bilgi` - Kayıt bilgilerini gösterir\n• `/kayit-listesi` - Kayıtlı kullanıcıları listeler\n• `/help-kayit` - Kayıt komutları listesi',
+              value: '• `/help-kayit` - Kayıt komutları listesi',
               inline: false
             },
             {
               name: '😄 **Eğlence**',
-              value: '• `/avatar` - Avatar gösterir\n• `/serverinfo` - Sunucu bilgisi\n• `/userinfo` - Kullanıcı bilgisi\n• `/kaccm` - Kaç cm olduğunu söyler\n• `/say` - Bota mesaj söyletir\n• `/reminder` - Periyodik hatırlatıcı oluşturur\n• `/reminder-remove` - Hatırlatıcıyı kaldırır\n• `/help-fun` - Eğlence komutları listesi',
+              value: '• `/help-fun` - Eğlence komutları listesi',
               inline: false
             },
             {
@@ -465,6 +603,13 @@ client.on('interactionCreate', async (interaction) => {
 
         await interaction.reply({ embeds: [economyHelpEmbed] });
       }
+        else if (commandName === 'connect-vc') {
+    await handleConnectVcCommand(interaction);
+}
+
+else if (commandName === 'disconnect-vc') {
+    await handleDisconnectVcCommand(interaction);
+}
 
       else if (commandName === 'help-fun') {
         const funHelpEmbed = new EmbedBuilder()
@@ -768,12 +913,15 @@ client.on('interactionCreate', async (interaction) => {
     await handleModalSubmit(interaction);
   } else if (interaction.isStringSelectMenu()) {
     if (interaction.customId === 'reminderRemoveSelect') {
-      await handleReminderRemoveSelect(interaction);
+        await handleReminderRemoveSelect(interaction);
     } else if (interaction.customId === 'jobSelect') {
-      await handleJobSelect(interaction);
+        await handleJobSelect(interaction);
     } else if (interaction.customId === 'stockSelect') {
-      await handleStockSelect(interaction);
+        await handleStockSelect(interaction);
+    } else if (interaction.customId === 'voiceChannelSelect') {
+        await handleVoiceChannelSelect(interaction);
     }
+}
   } else if (interaction.isButton()) {
     if (interaction.customId === 'daily_claim') {
       await handleDailyClaim(interaction);
@@ -1425,6 +1573,96 @@ async function handlePayCommand(interaction) {
   const amount = interaction.options.getInteger('miktar');
   const userData = initializeUserEconomy(interaction.user.id);
   const targetData = initializeUserEconomy(targetUser.id);
+
+  async function handleVoiceChannelSelect(interaction) {
+    // Sadece komutu başlatan kişi seçim yapabilir
+    if (interaction.user.id !== interaction.message.interaction.user.id) {
+        return await interaction.reply({
+            content: '❌ Bu kanal seçimini sadece komutu kullanan kişi yapabilir!',
+            ephemeral: true
+        });
+    }
+
+    const channelId = interaction.values[0];
+    const channel = interaction.guild.channels.cache.get(channelId);
+
+    try {
+        // Kanalı kontrol et
+        if (!channel) {
+            return await interaction.reply({
+                content: '❌ Kanal bulunamadı!',
+                ephemeral: true
+            });
+        }
+
+        // Kanalın ses kanalı olduğunu kontrol et
+        if (channel.type !== ChannelType.GuildVoice) {
+            return await interaction.reply({
+                content: '❌ Bu bir ses kanalı değil!',
+                ephemeral: true
+            });
+        }
+
+        // Botu kanala bağla
+        const connection = joinVoiceChannel({
+            channelId: channel.id,
+            guildId: channel.guild.id,
+            adapterCreator: channel.guild.voiceAdapterCreator,
+            selfDeaf: true, // Botu sağırlaştır
+            selfMute: false // Botu susturma (isteğe bağlı)
+        });
+
+        // Bağlantı event listener'ları
+        connection.on(VoiceConnectionStatus.Ready, () => {
+            console.log(`✅ Bot ${channel.name} ses kanalına bağlandı`);
+        });
+
+        connection.on(VoiceConnectionStatus.Disconnected, async () => {
+            try {
+                await Promise.race([
+                    entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+                    entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+                ]);
+            } catch (error) {
+                console.log('🔌 Ses bağlantısı kesildi, yeniden bağlanılıyor...');
+                connection.destroy();
+                currentVoiceConnection = null;
+                voiceChannelId = null;
+            }
+        });
+
+        connection.on(VoiceConnectionStatus.Destroyed, () => {
+            console.log('🔌 Ses bağlantısı tamamen kesildi');
+            currentVoiceConnection = null;
+            voiceChannelId = null;
+        });
+
+        // Global değişkenleri güncelle
+        currentVoiceConnection = connection;
+        voiceChannelId = channelId;
+
+        const successEmbed = new EmbedBuilder()
+            .setTitle('✅ Bot Ses Kanalına Bağlandı!')
+            .setColor(0x00FF00)
+            .addFields(
+                { name: '🔊 Kanal', value: `${channel.name}`, inline: true },
+                { name: '🆔 Kanal ID', value: channelId, inline: true },
+                { name: '👂 Durum', value: 'Sağırlaştırıldı (Deafened)', inline: true },
+                { name: '⏰ Bağlantı', value: '7/24 Aktif', inline: true }
+            )
+            .setFooter({ text: 'Bot kanaldan atılana kadar bağlı kalacak.', iconURL: interaction.user.displayAvatarURL() })
+            .setTimestamp();
+
+        await interaction.update({ content: '', embeds: [successEmbed], components: [] });
+
+    } catch (error) {
+        console.error('Ses kanalına bağlanma hatası:', error);
+        await interaction.reply({
+            content: '❌ Ses kanalına bağlanırken bir hata oluştu!',
+            ephemeral: true
+        });
+    }
+}
 
   // Kendine para gönderemez
   if (targetUser.id === interaction.user.id) {
