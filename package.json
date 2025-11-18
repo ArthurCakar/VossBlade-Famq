@@ -1,7 +1,7 @@
 {
   "name": "vossblade-bot",
-  "version": "3.2.0",
-  "description": "VossBlade Famq Discord Bot with Voice Channel Management",
+  "version": "4.0.0",
+  "description": "VossBlade Famq Discord Bot with Virtual Economy, Registration & Voice Systems",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -17,6 +17,8 @@
   },
   "keywords": [
     "discord-bot",
+    "economy",
+    "registration",
     "voice",
     "turkey"
   ],
